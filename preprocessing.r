@@ -3,11 +3,11 @@ library(readxl)
 library(lubridate)
 # 공휴일 목록 
 datelist = c( #"2022-01-01", "2022-01-31", "2022-02-01", "2022-02-02",
-             "2022-03-01", "2022-05-05", "2022-05-08", "2022-06-06",
-             "2022-08-15", "2022-09-09", "2022-09-10", "2022-09-11",
-             "2022-09-12", "2022-10-03", "2022-10-09", "2022-10-10", "2022-12-25") %>% 
+  "2022-03-01", "2022-05-05", "2022-05-08", "2022-06-06",
+  "2022-08-15", "2022-09-09", "2022-09-10", "2022-09-11",
+  "2022-09-12", "2022-10-03", "2022-10-09", "2022-10-10", "2022-12-25") %>% 
   ymd()
-    
+
 #for(f in 1:8){
 
 ## 1. 센서 원본 파일 읽기
@@ -74,6 +74,15 @@ sens2_ = sens1_ %>% filter(오류구분 != 2) %>%
     TRUE ~ 오류구분
   )) 
 
+# 이벤트 오류 다발 지점 분석용 
+sens2_ %>% filter(센서 %in% c("주차센서_옥천졸음쉼터_#02", "주차센서_옥천졸음쉼터_#11",  "주차센서_옥천졸음쉼터_#13") & 오류구분 == 3) %>% mutate(일자 = 일시 %>% as_date()) %>% 
+  group_by(일자,센서) %>% summarise(센서 = 센서, 일자 = 일자, n = n()) %>% distinct() %>% write.csv("d:/오류.csv")
+
+
+# 주기보고 이후 다음 이벤트 시간 분석 
+sens2_ %>% 
+
+
 error_1 =  sens1_ %>% group_by(센서) %>% summarise(주기보고 = sum(오류구분 == 1), 에러 = sum(오류구분 == 2)) %>%
   bind_cols(sens2_ %>%  group_by(센서) %>% summarise(정상이벤트 = sum(오류구분 == 0), 중복이벤트 = sum(오류구분 == 3)) %>% select(정상이벤트, 중복이벤트)) %>%
   mutate(합계 = 정상이벤트 + 주기보고 + 에러 + 중복이벤트) %>% 
@@ -93,16 +102,18 @@ sens3 = sens2_ %>%
     점유시간 = as_datetime(출차시) - 주차시,
     요일 = weekdays(as_datetime(주차시)),
     기간구분 = case_when(
-               as_date(주차시) >= ymd("2022.01.28") & as_date(주차시) <= ymd("2022.02.02")   ~ "설연휴",
-               요일 %in% c("토요일", "일요일") |  as_date(주차시) %in% datelist ~ "휴일",
-               TRUE ~ "평일"),
+      as_date(주차시) >= ymd("2022.01.28") & as_date(주차시) <= ymd("2022.02.02")   ~ "설연휴",
+      요일 %in% c("토요일", "일요일") |  as_date(주차시) %in% datelist ~ "휴일",
+      TRUE ~ "평일"),
     주야구분 = ifelse(hour(주차시) >= 7 & hour(주차시) < 19, "낮", "밤")
-             ) %>% 
+  ) %>% 
   select(센서, 요일, 기간구분, 주야구분, 주차시, 출차시, 점유시간) %>% 
   separate(센서, sep = "#", 
              into = c("졸음쉼터", "검지기번호"), 
              convert = T, 
-             extra = "merge")
+             extra = "merge") %>% 
+  mutate(주차시 = as.character(주차시))
+sens3 %>% summary()
 
 write.csv(sens3, paste0("d:/2022/IoT/1. preproc/usage_", f,".csv"), row.names = F)
 print(paste0(f," : 완료"))
@@ -124,6 +135,8 @@ sens3.daily = sens2_ %>%
   select(일자, 센서, 기간구분, 이용횟수, 평균이용시간_분)
 
 
+
+
 write.csv(sens3.daily, paste0("d:/2022/IoT/1. preproc/usage_daily_summary.csv"), row.names = F, fileEncoding = "utf-8")
 
 
@@ -138,7 +151,9 @@ sens3 %>% group_by(졸음쉼터, 기간구분, 주야구분) %>%
     표준편차 = sd(점유시간)) %>% 
   write.csv("d:/2022/IoT/9. summary/이용요약.csv", row.names = F)
 
-#}
+
+
+
 
 ## T 검정 및 분산 분석 
 
