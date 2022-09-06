@@ -183,7 +183,7 @@ event_table = error_tagged %>%
 
 
 ### 4.1 이벤트 테이블 출력 
-write.csv(event_table, paste0(root,"event_table.csv"), row.names = F)
+write.csv(event_table, paste0(root,"event_table3.csv"), row.names = F)
 
 ### 4.2 이벤트 요약 테이블 출력 
 event_summary = 
@@ -277,7 +277,7 @@ test %>% summary
 
 ### 5.1 점유율 테이블 출력 
 write.csv(test, paste0(root,"share_table.csv"), row.names = F)
-
+1
 share_table = test
 ## 5.2 점유율 시간 요약 테이블 
 share_summary = share_table %>% 
@@ -288,3 +288,38 @@ colnames(share_summary) = share_summary[1,]
 rownames(share_summary) = rownames(share_summary) %>% str_remove_all("_1")
 ## 점유율 요약 출력  
 write.csv(share_summary[-1,], paste0(root,"1share_summary.csv"), row.names = T,)
+
+
+
+
+### 표 오류 발생 시계열 차트 
+
+error_tagged %>% group_by(센서위치 = str_sub(센서, 1, 2), 일자 = month(as_date(일시))) %>% 
+  summarise(오류 = mean(오류구분 == 3)) %>%
+  spread(센서위치, 오류) %>%
+  bind_cols(
+    error_tagged %>% filter(센서 %in% c("옥천졸음쉼터_#02","옥천졸음쉼터_#11", "옥천졸음쉼터_#13")) %>% 
+      group_by(센서, 일자 = month(as_date(일시))) %>% 
+      summarise(오류 = mean(오류구분 == 3)) %>% 
+      spread(센서, 오류) %>% 
+      dplyr::select(-일자)
+  ) %>% 
+  write.csv(paste0(root,"tidy/일자별 오류평균.csv"), row.names = F)
+
+
+  
+
+### MANOVA 다원변량분석 
+
+res.man <- manova(cbind(Sepal.Length, Petal.Length) ~ Species, data = iris)
+summary(res.man)
+
+aov(Petal.Length ~ Species, data = iris) %>% TukeyHSD()
+
+summary.aov(res.man)
+
+library(MASS)
+res.man %>% class()
+TukeyHSD(res.man)
+
+
