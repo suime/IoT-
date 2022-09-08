@@ -86,12 +86,24 @@ ui <- navbarPage("주차센서 대시보드",
     
     # 그래프 들어갈 부분 
     mainPanel(position = "right",
-              h6("일간 이용율"),
-            plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
-              h6("일간 이용건수"),
-            plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
-              h6("일간 체류시간"),
-            plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
+              tabsetPanel(
+                tabPanel("전체",
+                         h6("이용률"),
+                         plotlyOutput("share_plot_daily_a", width = "100%", height = "230px"),
+                         h6("일간 이용건수"),
+                         plotlyOutput("count_plot_daily_a", width = "100%", height = "230px"),
+                         h6("일간 체류시간"),
+                         plotlyOutput("time_plot_daily_a", width = "100%", height = "230px"),
+                         ),
+                tabPanel("쉼터별",
+                         h6("일간 이용률"),
+                         plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
+                         h6("일간 이용건수"),
+                         plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
+                         h6("일간 체류시간"),
+                         plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
+                         )
+              ),
             ),
     
     )#side
@@ -393,6 +405,38 @@ server <- function(input, output) {
       theme_bw() 
   })
   
+  # 쉼터 구분 없이 전체 
+  output$share_plot_daily_a <- renderPlotly({
+    data = share_s() %>%
+      group_by(시간) %>%
+      summarise(평균_이용률 = mean(평균_이용률)) %>% 
+      ggplot() +
+      geom_col(aes(x = 시간, y = 평균_이용률),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 이용률 (%)") +
+      theme_bw() 
+  })
+  
+  # 
+  output$count_plot_daily_a <- renderPlotly({
+    event_() %>% group_by(시간 = hour(주차시각)) %>% 
+      summarise(이용건수 = n()) %>% ggplot() +
+      geom_col(aes(x = 시간, y = 이용건수),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 이용건수 (건)") +
+      theme_bw() 
+  })
+  
+  
+  # 
+  output$time_plot_daily_a <- renderPlotly({
+    event_() %>% group_by(시간 = hour(주차시각)) %>% 
+      summarise(평균점유시간 = mean(as.numeric(점유시간))/60) %>% ggplot() +
+      geom_col(aes(x = 시간, y = 평균점유시간),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 체류시간 (분)") +
+      theme_bw() 
+  })
   
   ## 점유율 데이터 차트 
   share_ <- reactive({
