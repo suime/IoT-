@@ -62,7 +62,7 @@ ui <- navbarPage("주차센서 대시보드",
   tabPanel("일간 이용현황 분석",
     sidebarLayout(
     # 일자 및 옵션 선택 
-    sidebarPanel(width = 4,
+    sidebarPanel(width = 5,
            fluidRow(
              box(width = 12, status = "info", solidHeader = TRUE,
                  uiOutput("date_range"))),
@@ -72,20 +72,20 @@ ui <- navbarPage("주차센서 대시보드",
                   radioGroupButtons("stat_type",
                                    label = "분석 단위",
                                     choices = c(
-                                      "이용건수" = "count",
-                                      "체류시간" = "time",
+                                      "이용건수",
+                                      "체류시간",
                                       "이용률" = "share"),
                                     justified = T))),
            hr(),
            fluidRow(
-
-             dataTableOutput("event_summary_daily")
-             
+             dataTableOutput("event_summary_daily"),
+             plotOutput("pie_daily_1", width = "150px", height = "150px")
            ),
     ),
     
     # 그래프 들어갈 부분 
     mainPanel(position = "right",
+              width = 7,
               tabsetPanel(
                 tabPanel("전체",
                          h6("이용률"),
@@ -507,6 +507,63 @@ server <- function(input, output) {
       group_by(졸음쉼터 = str_sub(센서,1,2), 시간) %>% 
       summarise(평균_이용률 = mean(이용률), 
                   최대_이용률 = max(이용률))
+  })
+  
+  # pie oven 
+
+  # 파이 차트 
+  output$pie_daily_1 <- renderPlot({
+    data = event_()
+    stat = input$stat_type
+    
+    if(as.character(stat) == "이용건수"){
+      data %>% 
+        filter(졸음쉼터 == "대신") %>% 
+        group_by(센서) %>% 
+        summarise(이용건수 = n()) %>% 
+        arrange(desc(이용건수)) %>% 
+        mutate(frac = 이용건수/sum(이용건수),
+               ymax = cumsum(frac),
+               ymin = c(0, head(ymax, -1)),
+               label_position = (ymax + ymin) /2, 
+               label = paste0(str_remove_all(센서,"\\D"), "\n ",prettyNum(frac*100, digits = 3), "%")) %>% 
+        ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=센서)) +
+        scale_fill_brewer(palette=10) +
+        scale_color_brewer(palette=2) +
+        geom_rect() +
+        geom_label(x=3, aes(y=label_position, label=label), size=4) +
+        coord_polar(theta="y") + 
+        xlim(c(-1, 4)) +
+        theme_void() +
+        theme(legend.position = "none",
+              panel.background = element_rect(fill='transparent'), 
+              plot.background = element_rect(fill='transparent'))
+      }else if(as.character(stat) == "체류시간"){
+        data %>%  
+          filter(졸음쉼터 == "대신") %>% 
+          group_by(센서) %>% 
+          summarise(점유시간 = as.numeric(mean(점유시간))) %>% 
+          arrange(desc(점유시간)) %>% 
+          mutate(frac = 점유시간/sum(점유시간),
+                 ymax = cumsum(frac),
+                 ymin = c(0, head(ymax, -1)),
+                 label_position = (ymax + ymin) /2, 
+                 label = paste0(str_remove_all(센서,"\\D"), "\n ",prettyNum(frac*100, digits = 3), "%")) %>% 
+          ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=센서)) +
+          scale_fill_brewer(palette=10) +
+          scale_color_brewer(palette=2) +
+          geom_rect() +
+          geom_label(x=3, aes(y=label_position, label=label), size=4) +
+          coord_polar(theta="y") + 
+          xlim(c(-1, 4)) +
+          theme_void() +
+          theme(legend.position = "none",
+                panel.background = element_rect(fill='transparent'), 
+                plot.background = element_rect(fill='transparent'))
+      
+    }
+      
+    
   })
   
 }# 
