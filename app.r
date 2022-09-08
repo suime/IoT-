@@ -1,11 +1,3 @@
-#
-# 빅카인즈 플랫폼 시각화용 shiny
-# 
-#
-#
-#
-
-#### global
 library(tidyverse)
 library(shiny)
 library(readxl)
@@ -16,520 +8,469 @@ library(shinythemes)
 library(bslib)
 library(plotly)
 library(DT)
-library(tm)
-library(wordcloud2)
-library(visNetwork) 
-library(concorR)
+library(shiny)
 
-options(repos = c(CRAN = "http://cran.rstudio.com"))
 options(shiny.maxRequestSize=200*1024^2) ## 파일 업로드 제한을 200
-options(dplyr.summarise.inform = FALSE)
 
-## esg 기본 용어 
-esg_env = "탄소, 신재생, 그린뉴딜, 충전소, 온실가스, 폐기물, 오염, 유해, 토양, 재활용, 미세먼지, 소음, 친환경"
-esg_saf = "산업안전, 교통사고, 교통안전, 중대재해, 처벌, 작업장, 안전사고" 
-esg_soc = "동반, 일자리, 공헌, 중소기업, 인권, 지역사회, 장애인, 사회적, 봉사, 공정, 정보보호"
-esg_gov = "지배구조, 청렴, 윤리, 감사, 이해충돌, 반부패, 비리, 부정, 이사회, 주주, 경영"
+datelist = c("2022-01-01", "2022-01-31", "2022-02-01", "2022-02-02",
+  "2022-03-01", "2022-05-05", "2022-05-08", "2022-06-06",
+  "2022-08-15", "2022-09-09", "2022-09-10", "2022-09-11",
+  "2022-09-12", "2022-10-03", "2022-10-09", "2022-10-10", "2022-12-25") %>% 
+  ymd()
+
+def_data = read_xlsx("D:/shinydev/iot_sensor/def.xlsx")
 
 
-## stopwords 기본 사전 
-
-stopwords = "대한민국, 한국.*, 한국도로공사, 도공, 도로공사, 관계자, 만큼, 박.., 김.., 문.., 이.., 대선, km, 더불어민주당, 국민의힘, .*들, ..장, .씨, 개월, 개소, 시간.*, .*도로"
-regions = ", 강원.*, 강릉, 광주, 대구, 부산, 서울, 수도권, 춘천, 울산, .북, 경부.*, .남, 가능성, 그동안, 위원회, 한국.*공사, 인천.*, .*공단"
-stopwords = paste0(stopwords, regions)
-stopwords
-## dupwords 기본 사전 
-dupwords = c("국토부, 교통부 :  국토교통부","기재부, 재정부 : 기획재정부",
-             "도공 : 한국도로공사", "고속도 : 고속도로", "고속도로순찰대 : 순찰대", "코로나바이러스, 감염증 : 코로나")
-
-title_filter_words = "인사, 부고, 강세, 경기, 영입, 부음"
-
-### functions
-words_detect <- function(df, esg_env, esg_soc, esg_saf, esg_gov) {
-  res = ifelse(str_detect(df, esg_env), "env", 
-               ifelse(str_detect(df, esg_saf), "saf", 
-                      ifelse(str_detect(df, esg_soc), "soc", 
-                             ifelse(str_detect(df, esg_gov), "gov", "none" 
-                             ))))
+ui <- navbarPage("주차센서 대시보드", 
+  theme = bs_theme(bootswatch = "flatly"),
   
-  return(res)
-}
+## 
+## 00. 파일 업로드 
+  tabPanel("분석 파일 업로드",
+    sidebarLayout(
+      sidebarPanel(
+        width = 3,
+        radioGroupButtons(
+          inputId = "source",
+          label = "분석 파일 선택하기",
+          choices = c(
+            "샘플 파일" = "def",
+            "사용자 파일" = "file"),
+          justified = T
+        ),
+        
+        conditionalPanel(
+          condition = "input.source == 'file'",
+          fileInput("raw_data",
+                    "주차센서 데이터 업로드",
+                    accept = ".xlsx",
+                    buttonLabel = "찾아보기",
+                    placeholder = ".xlsx"
+          ))
+        
+      ),
+      mainPanel(
+        position = "left",
+        
+        dataTableOutput("rare_dt")
+      )
+    ) # sidebar
+  ),#tab
 
-news.data_def = read_xlsx("exnews_raw.xlsx")
+
+  ## 01. 일간 이용 현황분석 
+  tabPanel("일간 이용현황 분석",
+    sidebarLayout(
+    # 일자 및 옵션 선택 
+    sidebarPanel(width = 4,
+           fluidRow(
+             box(width = 12, status = "info", solidHeader = TRUE,
+                 uiOutput("date_range"))),
+      
+           fluidRow(
+             box(width = 12, status = "info", solidHeader = TRUE,
+                  radioGroupButtons("stat_type",
+                                   label = "분석 단위",
+                                    choices = c(
+                                      "이용건수" = "count",
+                                      "체류시간" = "time",
+                                      "이용률" = "share"),
+                                    justified = T))),
+           hr(),
+           fluidRow(
+
+             dataTableOutput("event_summary_daily")
+             
+           ),
+    ),
+    
+    # 그래프 들어갈 부분 
+    mainPanel(position = "right",
+              h6("일간 이용율"),
+            plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
+              h6("일간 이용건수"),
+            plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
+              h6("일간 체류시간"),
+            plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
+            ),
+    
+    )#side
+  ),#tab
 
 
-ui <- navbarPage("빅카인즈 텍스트 분석",
-                 theme = bs_theme(bootswatch = "flatly"),
-                 id = "nav1",
-                 # 파일 입력 및 확인 패널
-                 tabPanel("뉴스 데이터 입력",
+  ## 02. 주간 이용 현황분석 
+  tabPanel("주간 이용현황 분석",
+           sidebarLayout(
+             sidebarPanel(),
+             mainPanel(position = "left",
+                       dataTableOutput("share_table")
+                       )
+           ) # sidebar
+  ),#tab
+  
+  ## 03. 오류 이용 현황분석 
+  tabPanel("오류 현황",
+           sidebarLayout(
+             sidebarPanel(width = 2,
+                          radioGroupButtons(
+                            inputId = "error_group",
+                            label = "범위 선택",
+                            choices = c(
+                              "주차쉼터별" = "1",
+                              "주차면별" = "2"),
+                            justified = T
+                          ),
                           
-                          sidebarLayout(
-                            
-                            mainPanel(
-                              position = "left",
-                              h6(textOutput("text_n_news")),
-                              h6(textOutput("text_n_news1")),
-                              h6(textOutput("text_n_news2")),
-                              hr(),
-                              DT::dataTableOutput("table_news")
-                            ),
-                            
-                            sidebarPanel(
-                              tags$a("빅카인즈 바로가기", href = "https://www.bigkinds.or.kr/v2"),
-                              
-                              radioGroupButtons(
-                                inputId = "source",
-                                label = "분석 파일 선택하기",
-                                choices = c(
-                                  "기본 파일" = "def",
-                                  "사용자 파일" = "file"),
-                                justified = T
-                              ),
-                              conditionalPanel(
-                                condition = "input.source == 'file'",
-                                fileInput("news",
-                                          "뉴스 파일 업로드",
-                                          accept = ".xlsx",
-                                          buttonLabel = "찾아보기",
-                                          placeholder = "파일 없음.."
-                                )),
-                              actionBttn("reset_filter", 
-                                         label = "파일 불러오기",
-                                         style = "pill",
-                                         color = "primary"),
-                              hr(),
-                              
-                              radioGroupButtons(
-                                inputId = "Opt_keyword",
-                                label = "키워드 옵션",
-                                size = "sm",
-                                choices = c("특성 키워드","전체 키워드"),
-                                justified = T,
-                                checkIcon = list(
-                                  yes = tags$i(class = "fa fa-check-square", style = "color: steelblue"),
-                                  no = tags$i(class = "fa fa-square-o", style = "color: steelblue"))
-                              ),
-                              
-                              radioGroupButtons(
-                                inputId = "filter_title",
-                                label = "제목 필터링",
-                                size = "sm",
-                                choices = c(
-                                  "기본" = "def",
-                                  "수정" = "mod"),
-                                justified = T
-                              ),
-                              
-                              conditionalPanel(
-                                condition = "input.filter_title == 'mod'",
-                                textAreaInput("text_title_filter", "제목 필터단어", 
-                                              width = "100%",
-                                              value = title_filter_words)),
-                              
-                              radioGroupButtons(
-                                inputId = "filter_esg",
-                                label = "ESG 용어사전",
-                                size = "sm",
-                                choices = c(
-                                  "기본 용어" = "def",
-                                  "용어 편집" = "mod"),
-                                justified = T
-                              ),
-                              conditionalPanel(
-                                condition = "input.filter_esg == 'mod'",
-                                textAreaInput("text_env","E 환경", 
-                                              width = "100%",
-                                              value = esg_env),
-                                textAreaInput("text_soc","S 사회",
-                                              width = "100%",
-                                              value = esg_soc),
-                                textAreaInput("text_saf", "S 안전",
-                                              width = "100%",
-                                              value = esg_saf),
-                                textAreaInput("text_gov", "G 윤리청렴",
-                                              width = "100%",
-                                              value = esg_gov))
-                              
-                              
-                            )
-                          )
-                 ), #tab 1
-                 
-                 # 2. 추세 분석
-                 tabPanel("추세 분석",
-                          sidebarLayout(
-                            mainPanel(
-                              position = "left",
-                              h5("ESG 뉴스 추세 분석"),
-                              tabsetPanel(
-                                tabPanel("bar plot", plotlyOutput("plot_esg")),
-                                tabPanel("table", tableOutput("table_trend"))
-                              ),
-                              hr(),
-                            ),
-                            
-                            sidebarPanel(
-                              uiOutput("news.data.date"),
-                              radioGroupButtons(
-                                inputId = "opt_date_selection",
-                                label = "기간 구분",
-                                selected = "일",
-                                choices = c("년", "월", "일"),
-                                justified = TRUE)
-                              
-                            )
-                          )          
-                 ), #tab 2
-                 
-                 
-                 # 3. 네트워크 시각화 패널 
-                 tabPanel("키워드 분석",
-                          sidebarLayout(
-                            position = "right",
-                            sidebarPanel(
-                              
-                              # 가중치 설정 
-                              radioGroupButtons(
-                                inputId = "Opt_weight",
-                                label = "단어 가중치 옵션",
-                                size = "sm",
-                                choices = c("단어 빈도수","TF - IDF"),
-                                justified = T,
-                                checkIcon = list(
-                                  yes = tags$i(class = "fa fa-check-square",
-                                               style = "color: steelblue"),
-                                  no = tags$i(class = "fa fa-square-o",
-                                              style = "color: steelblue"))
-                              ),
-                              
-                              # 중복어 처리 
-                              textAreaInput("text_dupwords","\u2795 중복어 처리",
-                                            width = "100%",
-                                            height = "auto",
-                                            rows = 10,
-                                            cols = 2,
-                                            value = paste0(as.character(dupwords), collapse = "\n")),  
-                              
-                              # 불용어 처리  
-                              textAreaInput("text_stopwords","\u274C 불용어 처리",
-                                            width = "100%",
-                                            height = "auto",
-                                            rows = 10,
-                                            value = stopwords),
-                              actionBttn("reset_words", 
-                                         label = "\u2714 필터 새로 적용하기",
-                                         style = "pill",
-                                         color = "primary")
-                              
-                            ), # side
-                            
-                            mainPanel(
-                              
-                              h5("키워드 빈도"),
-                              tabsetPanel(
-                                tabPanel("\u2601 Wordcloud", wordcloud2Output("wordcloud_termFreq",
-                                                                              height =  "700px")),
-                                tabPanel("□ Table", tableOutput("table_termFreq"))
-                              )
-                              
-                            ) # main 
-                          )
-                 ), #tab 3
-                 
-                 # 4. 네트워크 시각화 패널 
-                 tabPanel("네트워크 분석",
-                          sidebarLayout(
-                            position = "right",
-                            sidebarPanel(
-                              sliderInput("slider_num_words",
-                                          label = "네트워크 단어 수",
-                                          min = 64,
-                                          max = 128,
-                                          value = 128),
-                              sliderInput("opt_concor",
-                                          label = "나눌 그룹 수",
-                                          min = 2,
-                                          max = 4,
-                                          value = 3),
-                              br(),
-                              actionBttn("reset_network", 
-                                         label = "네트워크 구성하기",
-                                         style = "pill",
-                                         color = "primary",
-                                         icon = icon("cloud"))
-                            ),
-                            mainPanel(
-                              tabsetPanel(
-                                tabPanel("네트워크 시각화", visNetworkOutput("vis_network", height = "600px")),
-                                tabPanel("군집별 단어", dataTableOutput("table_node_group")),
-                              ) #tabset
-                            )
-                          ) # 
-                 ), #tab 4
-                 
-                 tabPanel("매뉴얼",
-                          p("매뉴얼이 들어가는 자리 ")
-                 ) # 5. tab 매뉴얼
-)
+                          ),
+             
+             mainPanel(
+               position = "left",
+               
+               
+               tableOutput("error_dt"),
+             )
+           ) # sidebar
+  )#tab
+  
+  
+) # ui 
+  
 
-
-
-
-### 
-
+    
+    
+##
 server <- function(input, output) {
   
-  # 제목 필터 단어 
-  text_title <- reactive({
-    res = paste0("\\b", input$text_title_filter,"\\b") %>%
-      str_replace_all("\\[","\\\\[") %>% 
-      str_replace_all("\\]","\\\\]") %>% 
-      str_replace_all(",\\s*","\\\\b|\\\\b")
-    return(res)
-  })
-  
-  # 각 용어들 반응형 전처리 
-  text_env <- reactive({input$text_env %>% str_replace_all(",\\s*", "|")})
-  text_soc <- reactive({input$text_soc %>% str_replace_all(",\\s*", "|")})
-  text_saf <- reactive({input$text_saf %>% str_replace_all(",\\s*", "|")})
-  text_gov <- reactive({input$text_gov %>% str_replace_all(",\\s*", "|")})
-  
-  
-  ## news 파일 
-  news.data <- reactive({
+  ## raw - rare 파일 
+  rare_ <- reactive({
     
     if(input$source == "def"){
-      y = news.data_def
+      y = def_data
     } else {
-      x = input$news
+      x = input$raw_data
       ext = tools::file_ext(x$datapath)
       req(x)
       validate(need(ext == "xlsx","Error : 정확한 파일을 업로드하세요."))
       y = read_xlsx(x$datapath)}
     
-    y %>% rename(특성 =  "특성추출(가중치순 상위 50개)") %>%
-      select(일자, 제목, as.character(option_keyword())) 
+    y %>% rename(일시 = `송신일시(sendDate)`) %>% 
+      select(c(센서, 센서값, 일시)) %>% 
+      
+      #센서값 열 분할 
+      mutate(센서값 = str_remove_all(센서값, "[[a-zA-Z]|[가-힣]|[\\s]]+: ")) %>% 
+      separate(센서값, 
+                  sep = ",", 
+                  into = c("장치구분", "검지기", "배터리", "장애", "RSSI", "SMR", "동작"), 
+                  convert = T, 
+                  extra = "merge") %>% 
+      
+      # 값 범주화 
+      mutate(장애 = ifelse(장애 == "51.0", "리셋 발생", 장애),
+               동작 = case_when(
+                  동작 %in% c("2.0","오류") ~ "LoRa Reset 수신 후 부팅",
+                  동작 == "3.0" ~ "LoRa 전송오류 등으로 인한 자체 시스템 Reset",
+                  TRUE ~ 동작
+               )) %>% 
+      
+      # 센서 이름에서 맨 앞의 주차센서 빼기 
+      mutate(센서 = str_remove(센서, "^주차센서_"),
+               졸음쉼터 = str_sub(센서,1,2)) %>% 
+      
+      # 중복, 결측치 제거 
+      distinct() %>% 
+      na.omit() %>% 
+      
+      # 정렬 
+      arrange(센서, 일시) 
   })
   
-  ## news filtered 
-  news.data.filtered.0 <- reactive({
-    news.data() %>% filter(str_detect(제목, as.character(text_title()), negate = T))
+  ## raw file 출력 
+  output$rare_dt <- renderDataTable({
+    rare_()
   })
   
-  news.data.filtered.1 <- reactive({
-    key = option_keyword() %>% as.character()
-    x = news.data.filtered.0() 
-    x %>% mutate(esg = 
-                   ifelse(str_detect(x[[key]], text_env()), "env",
-                          ifelse(str_detect(x[[key]], text_saf()), "saf",
-                                 ifelse(str_detect(x[[key]], text_soc()), "soc",
-                                        ifelse(str_detect(x[[key]], text_gov()), "gov", "none"
-                                        )))))
+  error_tag <- reactive({
+    rare_() %>% 
+      select(졸음쉼터, 센서, 검지기, 동작, 일시) %>% 
+      
+      mutate(오류구분 = case_when(
+        동작 == "주차이벤트" ~ 0, 
+        동작 == "주기보고" ~ 1,
+        TRUE  ~ 2 ))  %>%
+      
+      mutate(오류구분 = case_when(
+        # 주기보고 다음 발생한 오류 
+        #lag(오류구분, default = 0) == 1  ~  3, 
+        
+        # 차량 주차 다음에 주기보고나 오류 메시지가 발생한 것 => 3 오류 처리 
+        검지기 == "차량주차" & lead(오류구분) != 0 & 오류구분 == 0 ~ 3,
+        
+        # 주차이고 다음 항목도 주차인 것 => 3 
+        센서 == lead(센서, default = last(sensor.name)) & 검지기 == "차량주차" &
+          검지기 == lead(검지기, default = "차량주차")  & 오류구분 == 0 ~ 3,
+        
+        # 출차이고 이전 항목도 출차인 것 => 3 
+        센서 == lag(센서, default = first(sensor.name)) & 검지기 == "차량출차" &
+          검지기 == lag(검지기, default = "차량출차")   & 오류구분 == 0 ~ 3,
+        
+        
+        센서 == lead(센서, default = last(sensor.name)) & month(as_datetime(일시)) != lead(month(as_datetime(일시))) & 검지기 == "차량주차"  ~ 3,
+        센서 == lag(센서, default = first(sensor.name)) & month(as_datetime(일시)) != lag(month(as_datetime(일시))) & 검지기 == "차량출차"  ~ 3,
+        
+        # 처음 / 마지막 데이터인데 출차 / 주차 인 경우 이벤트 오류 => 3 
+        센서 != lag(센서) & 검지기 == "차량출차" & 오류구분 == 0  ~ 3,
+        센서 != lead(센서) & 검지기 == "차량주차" & 오류구분 == 0 ~ 3,
+        
+        
+        TRUE ~ 오류구분
+      ) 
+     ) 
   })
-  news.data.filtered.2 <- reactive({
-    data = news.data.filtered.1()
-    if(length(input$UI_date[1])){
-      return(data %>% filter(esg != "none") %>% 
-               filter(ymd(일자) >= input$UI_date[1] & ymd(일자) < input$UI_date[2]))
-    } else if(input$opt_date_selection == "년"){
-      filter(ymd(일자) >= input$UI_date[1] & 일자[1:4] <= input$UI_date[2])
-    }else{
-      return(data %>% filter(esg != "none"))}
-  })
+ 
   
+  
+  
+  # 분석 기간 선택 
   date.range <- reactive({
-    min = news.data.filtered.0()$일자 %>% min() %>% ymd()
-    max = news.data.filtered.0()$일자 %>% max() %>% ymd() + 1
-    if(max - min < 365){updateRadioGroupButtons(inputId = "opt_date_selection", disabledChoices = "년")
-    } else {updateRadioGroupButtons(inputId = "opt_date_selection", disabledChoices = NULL)}
-    if(max - min < 31){updateRadioGroupButtons(inputId = "opt_date_selection", disabledChoices = c("월", "반기", "년") )}
-    
-    if(input$opt_date_selection == "년"){return(seq(min, max + 365, by = "1 year"))}
-    else if(input$opt_date_selection == "월"){return(seq(min, max, by = "1 month"))}
-    else {return(seq(min, max, by = "1 day"))}
+    min = rare_()$일시 %>% as_date() %>% min()  
+    max = rare_()$일시 %>% as_date() %>% max()
+  return(list(min, max))
     
   })
   
-  ## 일자 구하는 ui 
-  output$news.data.date <- renderUI({
-    sliderTextInput("UI_date",
-                    label = "분석 기간 선택",
-                    choices = date.range(),
-                    selected = c(date.range() %>% min(), date.range() %>% max()),
-                    grid = T
+  # 분석기간 동적 슬라이더 
+  output$date_range <- renderUI({
+    min = date.range()[[1]]
+    max = date.range()[[2]]
+    
+    dateRangeInput("date_range_",
+                   label = "분석기간 선택",
+                   start = min,
+                   end = max,
+                   min = min,
+                   max = max,
+                   format = "yyyy-mm-dd",
+                   language = "ko",
+                   separator = "~"
+    )
+    
+  })
+  
+  
+  # 오류 발생 현황 요약 테이블 -----
+  output$error_dt <- renderTable({
+    data = error_tag()
+    y = input$error_group
+    
+    if(y == "2"){
+      x = error_tag()
+    } else {
+      x = error_tag() %>% mutate(센서 = str_sub(센서, 1, 2))
+    }
+    
+    x %>% group_by(센서 = str_remove_all(센서,"졸음쉼터")) %>% 
+    summarise(
+      정상 = sum(동작 == "주차이벤트" & 오류구분 == 0), 
+      
+      # 주기보고 및 이후 첫번째 이벤트 오류 
+      주기보고 = sum(오류구분 == 1), 
+      
+      # LoRa망 관련 오류 
+      통신오류 = sum(str_detect(동작,"^LoRa") & 오류구분 == 2),
+      
+      #센서오류
+      센서오류 = sum(str_detect(동작,"^레이더") & 오류구분 == 2),
+      
+      #초기부팅 
+      초기부팅 = sum(동작 == "초기 부팅"),
+      
+      
+      # 이벤트 오류 
+      중복오류 = sum(오류구분 == 3),
+      
+      # 합계 
+      합계 = sum(c_across(정상:중복오류))
     )
   })
   
-  # 키워드 옵션
-  option_keyword <- reactive({
-    ifelse(input$Opt_keyword == "특성 키워드","특성","키워드")
-  })
-  option_weight <- reactive({
-    ifelse(input$Opt_weight == "단어 빈도수", T, F)
-  })
   
-  # 테이블 출력   
-  output$table_news <- renderDataTable({
-    input$reset_filter
-    isolate({
-      withProgress({
-        setProgress(message = "파일을 읽는 중입니다...")
-        return(news.data.filtered.1())
-      })
-    })
-  })  
-  
-  # 입력된 raw 뉴스 건수 
-  output$text_n_news <- renderText({
-    return(paste0("전체 뉴스 :", nrow(news.data()),"건"))
-  })
-  output$text_n_news1 <- renderText({
-    return(paste0("제목 필터 : ", nrow(news.data.filtered.1()),"건"))
-  })
-  output$text_n_news2 <- renderText({
+  # 이벤트 테이블 ----
+  event <- reactive({
+    data = error_tag() 
     
-    return(paste0("ESG 키워드 필터 : ", nrow(news.data.filtered.1() %>% filter(esg != "none")),"건"))
-  })
-  
-  tokenizer <- function(txt){
-    res = txt %>% as.character() %>% str_split(",\\s*") %>% .[[1]]
-    dupwords = input$text_dupwords %>% str_split("\\n") %>% .[[1]]
-    stop = paste0("\\b", input$text_stopwords, "\\b") %>% str_replace_all(",\\s*","\\\\b|\\\\b")
+    data %>% 
+      mutate(일시 = as_datetime(일시)) %>% 
+      
+      filter(오류구분 == 0) %>% 
+      
+      # 출차시각 
+      mutate(출차시각 = as_datetime(ifelse(검지기 == "차량주차" & 센서 == lead(센서), lead(일시), NA))) %>% 
+      
+      filter(!is.na(출차시각)) %>% 
+      
+      rename(주차시각 = 일시) %>% 
+      
+      mutate(
+        점유시간 = 출차시각 - 주차시각,
+        요일 = weekdays(as_datetime(주차시각)),
+        기간구분 = ifelse(
+          요일 %in% c("토요일", "일요일") | as_date(주차시각) %in% datelist, "휴일", "평일")
+      ) %>% 
+      
+      select(졸음쉼터, 센서, 요일, 기간구분, 주차시각, 출차시각, 점유시간) 
+      
     
-    ## 중복어 합치기 
-    for(i in 1:length(dupwords)){
-      z = dupwords[i] %>% str_split("\\s*:\\s*")  %>% .[[1]]
-      z[1] = paste0("\\b", z[1], "\\b") %>% str_replace_all(",\\s*","\\\\b|\\\\b") %>% .[[1]]
-      res = str_replace_all(res, z[1], z[2])
-    }
+  })
+
+  
+  ## event_date_filtered 
+  event_ <- reactive({
+    date.min = input$date_range_[1] %>% as_date()
+    date.max = input$date_range_[2] %>% as_date()
+    data = event()
     
-    ## 불용어 제거하기 
+    data %>% 
+      filter(as_date(주차시각) >= date.min & as_date(출차시각) <= date.max)
+  })
+  
+  
+  # event summary 
+  event_s<- reactive({
+    data = event_()
+    share = share_s()
     
-    return(str_remove_all(res, stop)) 
-  }
-  
-  # dtm 
-  dtm <- reactive({
-    input$reset_words
-    corp =  VCorpus(VectorSource(news.data.filtered.2()[[option_keyword()]])) %>% 
-      tm_map(removeNumbers)
-    isolate({
-      withProgress({ 
-        setProgress(message = "뉴스 변환 중입니다...")
-        if(option_weight()){
-          TermDocumentMatrix(corp, control = list(tokenize = tokenizer, wordLengths = c(2,Inf)))
-        } else {
-          TermDocumentMatrix(corp, control = list(tokenize = tokenizer, wordLengths = c(2,Inf),weighting = weightTfIdf))
-        }
-      })
-    })
-  })
-  
-  # 키워드 분석 빈발 
-  table_termfreq <- reactive({
-    x = dtm() %>% 
-      removeSparseTerms(.995) %>% 
-      as.matrix() %>%
-      rowSums() %>%
-      sort(decreasing = T) %>% 
-      .[1:100] %>% 
-      as.data.frame() %>% 
-      rownames_to_column(var = "word") 
-    return(rename(x, freq = `.`))
-  })
-  
-  # 추세분석 플롯 
-  esg_trend<- reactive({
-    format = switch (input$opt_date_selection,
-                     "년" = "%y",
-                     "월" = "%y-%m",
-                     "일" = "%y-%m")
-    data = news.data.filtered.2() %>% 
-      mutate(기간 = format(ymd(일자), format)) %>%
-      group_by(기간, esg) %>%  
-      summarise(기간 = 기간, 태그 = esg, 건수 = n()) %>% 
-      distinct() %>% select(기간, esg, 건수)
-  })
-  
-  output$table_trend <- renderTable({
-    data = esg_trend() 
-    data %>% spread(key = esg, value = 건수)
-  })
-  
-  output$plot_esg <- renderPlotly({
-    data = esg_trend()
-    ggplotly(ggplot(data = data, aes(x = 기간, y = 건수, fill = esg)) +
-               geom_bar(stat="identity", width = 0.7) +
-               theme_minimal())
-  })
-  
-  # 워드 클라우드 용 
-  output$table_termFreq <- renderTable({
-    table_termfreq() %>% head(20)
-  })
-  output$wordcloud_termFreq <- renderWordcloud2({
-    table_termfreq() %>% 
-      wordcloud2(size = 1, minSize = 2)
-  })
-  
-  ##  네트워크 분석용 
-  # ttm 만들기 
-  ttm <- reactive({
-    n_words = input$slider_num_words
-    names = dtm() %>% as.matrix() %>% rowSums() %>% sort(decreasing = T) %>% head(n_words) %>% names()
-    dtm.mat = dtm()[names,] %>% as.matrix()
-    return(dtm.mat %*% t(dtm.mat))
+    x = share %>% group_by(졸음쉼터) %>% 
+      summarise(평균_이용률 = mean(평균_이용률), 
+                  최대이용률 = max(최대_이용률))
+    
+    ret = data %>%
+      group_by(졸음쉼터) %>% 
+      summarise(이용건수 = n(),
+                `평균 체류시간(분)` = prettyNum(as.numeric(mean(점유시간)/60), digits = 4),
+                `최대 체류시간(분)` = prettyNum(as.numeric(max(점유시간)/60), digits = 4)) %>%
+      inner_join(x, by = c("졸음쉼터")) %>% 
+      t()
+      
+    colnames(ret) = ret[1,]
+    return(ret[-1,])
   })
   
   
-  nodelink <- reactive({
-    input$reset_network
-    isolate({
-      withProgress({
-        setProgress(message = "네트워크 구성 중...")
-        data = ttm() 
-        node = data.frame(id = 1:length(unique(data %>% rownames())), label = sort(unique(data %>% rownames()))) 
-        link = setNames(data.frame(matrix(ncol = 3, nrow = 0)), c("from", "to", "weight") )
-        conc = concor(list(as.matrix(data)), nsplit = input$opt_concor, self_ties = FALSE, cutoff = .99, max_iter = 50)
-        node = left_join(node, conc, by = c("label" = "vertex")) %>% rename(group = block)
+  output$event_summary_daily <- renderDataTable(
+    event_s()
+  )
+  
+  
+  
+  # 일간 그래프들 
+  # 
+  output$count_plot_daily <- renderPlotly({
+    event_() %>% group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
+      summarise(이용건수 = n()) %>% ggplot() +
+      geom_col(aes(x = 시간, y = 이용건수, fill = 졸음쉼터),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 이용건수 (건)") +
+      theme_bw() 
+  })
+  
+  
+  # 
+  output$time_plot_daily <- renderPlotly({
+    event_() %>% group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
+      summarise(평균점유시간 = mean(as.numeric(점유시간))/60) %>% ggplot() +
+      geom_col(aes(x = 시간, y = 평균점유시간, fill = 졸음쉼터),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 체류시간 (분)") +
+      theme_bw() 
+  })
+  
+  output$share_plot_daily <- renderPlotly({
+    data = share_s() %>% 
+      ggplot() +
+      geom_col(aes(x = 시간, y = 평균_이용률, fill = 졸음쉼터),
+               position = position_dodge(preserve = 'single')) +
+      ylab("평균 이용률 (%)") +
+      theme_bw() 
+  })
+  
+  
+  ## 점유율 데이터 차트 
+  share_ <- reactive({
+    data = event() 
+    
+    sensor.name = names(table(data$센서))
+    
+    time = seq.POSIXt(
+      from = data$주차시각 %>% min(),
+      to = data$출차시각 %>% max() + 3600*12,
+      by = "hour") %>%
+      
+      format.Date("%Y-%m-%d %H:00:00") %>%
+      unique() %>% 
+      as.character()
+    
+    ret = data.frame(matrix(0,nrow = length(time), ncol = length(sensor.name) + 1))
+    colnames(ret) = c("time", sensor.name)
+    ret$time = time
+    
+    for(i in 1:nrow(data)){
+      
+      sensor = data$센서[i]
+      from = data$주차시각[i]
+      end = data$출차시각[i]
+      stime = data$점유시간[i]
+      
+      start_hour = format.Date(from, "%Y-%m-%d %H:00:00")
+      end_hour = format.Date(end, "%Y-%m-%d %H:00:00")
+      
+      # 1번 : 주차시각과 출차시각이 같다면 점유시간 그대로 플러스 
+      if(start_hour == end_hour){
+        ret[time == start_hour, sensor] <- ret[time == start_hour, sensor] + stime
+      } 
+      # 2번 : 주차시각과 출차시각이 다를 때 
+      else if(start_hour != end_hour){
+        start_frac = 3600 - {(from %>% format.Date("%M") %>% as.numeric() * 60) + (from %>% format.Date("%S") %>% as.numeric())}
+        end_frac = (end %>% format.Date("%M") %>% as.numeric() * 60) + (end %>% format.Date("%S") %>% as.numeric())
         
-        for(i in 1:nrow(data)){
-          for(j in 1:(ncol(data) + 1 - i)){
-            if(i < j  & data[i,j] != 0){
-              link[nrow(link)+1,] = data.frame(from = node[i,1], to = node[j,1], weight = data[i,j])
-            }
+        # 시작 시간에 
+        ret[time == start_hour, sensor] <- ret[time == start_hour, sensor] + start_frac
+        
+        # 마지막 시간에 
+        ret[time == end_hour, sensor] <- ret[time == end_hour, sensor] + end_frac
+        
+        # 가운데 시간에 + 3600
+        if(as.POSIXct(format(from + 3600*2, "%Y-%m-%d %H:00:00"), tz = "UTC") <= end ){
+          for(mid_time in seq.POSIXt(as.POSIXct(format(from + 3600, "%Y-%m-%d %H:00:00"), tz = "UTC"),
+                                     to = end - 3600,
+                                     by = "hour")){
+            ret[time == format(mid_time %>% as_datetime(), "%Y-%m-%d %H:00:00"), sensor] <- 3600
           }
         }
-        return(list(node, link))
-      })
-    })
+        
+      }
+    }
+    ret = ret %>% mutate_at(.cols = -1,.funs = function(x) x/3600)
+    return(ret)
   })
   
-  output$vis_network <- renderVisNetwork({
-    node = nodelink()[[1]]
-    link = nodelink()[[2]]
-    visNetwork(node, link, submain = "네트워크 분석") %>%
-      visIgraphLayout() %>% 
-      visOptions(selectedBy = "group") %>%
-      visInteraction(navigationButtons = TRUE)
+  ## share summary 
+  share_s <- reactive({
+    data = share_() 
+    nn = ncol(data)
+    data %>% group_by(시간 = hour(time)) %>% 
+      summarise(across(2:nn, list(mean))) %>% 
+      gather(key = "센서", value = "이용률", -시간) %>% 
+      group_by(졸음쉼터 = str_sub(센서,1,2), 시간) %>% 
+      summarise(평균_이용률 = mean(이용률), 
+                  최대_이용률 = max(이용률))
   })
   
-  output$table_node_group <- renderDataTable({
-    node = nodelink()[[1]]
-    node %>% group_by(group) %>% mutate(단어 = paste0(label, collapse = ", ")) %>%
-      select(group, 단어) %>%  distinct()
-  })
-  
-  
-  
-}# server
+}# 
 
-# Run the application 
+
+
+
+
+
+
 shinyApp(ui = ui, server = server)
-
-
-
-
-
-
