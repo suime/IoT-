@@ -19,9 +19,18 @@ time_share <- function(from, to, diff) {
 
 
 
-zy = pmap_dfr(list(from = z$주차시각, to = z$출차시각, diff = z$점유시간), time_share) %>% 
-  rownames_to_column("time") %>% 
-  mutate(time = str_remove_all(time, "\\.{3}.*"),
-         time = ifelse(str_length(time) == 10, str_c(time, " 00:00:00"), time)) %>% 
-  group_by(time) %>% 
-  summarise(share_time = sum(., na.rm = T))
+for(i in sensor.name){
+  
+  z = event_ %>%
+    filter(센서 == i) 
+  
+  ret = pmap_dfr(list(from = z$주차시각, to = z$출차시각, diff = z$점유시간), time_share) %>% 
+    rownames_to_column("time") %>% 
+    mutate(time = str_remove_all(time, "\\.{3}.*"),
+           time = ifelse(str_length(time) == 10, str_c(time, " 00:00:00"), time)) %>% 
+    group_by(time) %>% 
+    summarise(name = sum(., na.rm = T)) 
+    
+  
+  tx = merge(tx, ret, by = 'time', all = T)
+}
