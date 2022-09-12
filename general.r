@@ -18,6 +18,10 @@ time_share <- function(from, to, diff) {
 }
 
 
-pmap_dfr(list(from = event.s$주차시각, to = event.s$출차시각, diff = event.s$점유시간), time_share) %>% 
-  rownames_to_column("time") %>% group_by(time = str_sub(time, 1, 19)) %>% 
-  summarise(share_time = sum(.,na.rm = T))
+
+zy = pmap_dfr(list(from = z$주차시각, to = z$출차시각, diff = z$점유시간), time_share) %>% 
+  rownames_to_column("time") %>% 
+  mutate(time = str_remove_all(time, "\\.{3}.*"),
+         time = ifelse(str_length(time) == 10, str_c(time, " 00:00:00"), time)) %>% 
+  group_by(time) %>% 
+  summarise(share_time = sum(., na.rm = T))
