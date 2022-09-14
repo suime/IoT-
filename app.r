@@ -149,19 +149,15 @@ ui <- navbarPage("주차센서 대시보드",
                 conditionalPanel(
                   condition = "input.stat_type != 'heatmap'",
                          h6("일간 이용률"),
-                         plotlyOutput("share_plot_daily_all", width = "100%", height = "230px"),
+                         plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
                          h6("일간 이용건수"),
                          plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
                          h6("일간 체류시간"),
-                         plotlyOutput("time_plot_daily_all", width = "100%", height = "230px"),
+                         plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
                          ),
                 conditionalPanel(
                   condition = "input.stat_type == 'heatmap'",
-                         h6("일간 이용률"),
-                         plotlyOutput("share_plot_daily_loc", width = "100%", height = "230px"),
-                         h6("일간 이용건수"),
-                         h6("일간 체류시간"),
-                         plotlyOutput("time_plot_daily_loc", width = "100%", height = "230px"),
+                  
                          ),
                         ), # main 
     
@@ -195,30 +191,8 @@ ui <- navbarPage("주차센서 대시보드",
           # 그래프 들어갈 부분 
           mainPanel(position = "right",
                     width = 7,
-                    conditionalPanel(
-                      condition = "input.stat_type_week == 'all'",
-                      h6("주간 이용률"),
-                      plotlyOutput("share_plot_week_all", width = "100%", height = "230px"),
-                      h6("주간 이용건수"),
-                      plotlyOutput("count_plot_week_all", width = "100%", height = "230px"),
-                      h6("주간 체류시간"),
-                      plotlyOutput("time_plot_week_all", width = "100%", height = "230px"),
-                    ),
-                    conditionalPanel(
-                      condition = "input.stat_type_week == 'loc'",
-                      h6("주간 이용률"),
-                      plotlyOutput("share_plot_week_loc", width = "100%", height = "230px"),
-                      h6("주간 이용건수"),
-                      plotlyOutput("count_plot_week_loc", width = "100%", height = "230px"),
-                      h6("주간 체류시간"),
-                      plotlyOutput("time_plot_week_loc", width = "100%", height = "230px"),
-                    ),
-                    conditionalPanel(
-                      condition = "input.stat_type_week== 'lot'",
-                      plotOutput("heatmap_week_lot", width = "100%", height = "250px"),
-                      plotlyOutput("count_plot_week_lot", width = "100%", height = "230px"),
-                      plotlyOutput("time_plot_week_lot", width = "100%", height = "230px"),
-                ),
+                    
+                
       ),
                       
       )#side
@@ -622,52 +596,80 @@ server <- function(input, output) {
   
   # 일간 그래프들 -----------------------------------
   
-  # 일간 이용률 : 전체 
-  output$share_plot_daily_all <- renderPlotly({
-    data = share_() %>% 
-      group_by(시간 = hour(time)) %>%         
-      summarise(across(-time, list(mean))) %>% 
-      gather(key = "센서", value = "이용률", -시간) %>% 
-      group_by(시간) %>% 
-      summarise(평균_이용률 = mean(이용률)) %>% 
-      ggplot() +
-      geom_line(aes(x = 시간, y = 평균_이용률)) +
-      ylab("평균 이용률 (%)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
+  # 일간 이용률 
+  output$share_plot_daily <- renderPlotly({
+    x = share_() %>% 
+      group_by(time = hour(as_datetime(time))) %>% 
+      summarise(across(everything(), mean)) %>% 
+      gather("센서","이용률", -time) %>% 
+      group_by(time) %>% 
+      summarise(이용률 = round(mean(이용률)*100,1)) %>% 
+      rename(시간 = time) 
+    
+    me = round(mean(x$이용률),1)
+    
+    if(input$stat_type == "all"){
+    p = x %>%
+      plot_ly() %>% 
+      add_trace(x = ~시간, y = ~이용률,  type = 'scatter', mode = 'lines', fill = 'tozeroy', 
+                line = list(shape = "spline"), 
+                text = ~paste0(이용률,"%"),
+                hoverinfo = "text",
+                textposition = "inside") %>% 
+      add_text(x = 1.5, y = me*1.05, text = ~paste0("평균 ", me, "%"),
+               hoverinfo ="text", showlegend = F) %>% 
+      add_lines(x = 0:24, y = me, showlegend = F,
+                text = ~paste0("평균"),
+                hoverinfo ="text",
+                textposition = "inside",
+                line = list(color = "grey",
+                            width = 1,
+                            dash = 'dot'))
+      }else { 
+    
+      x = share_() %>% 
+        group_by(time = hour(as_datetime(time))) %>% 
+        summarise(across(everything(), mean)) %>% 
+        gather("센서","이용률", -time) %>% 
+        group_by(졸음쉼터 = str_sub(센서,1,2), time) %>% 
+        summarise(이용률 = round(mean(이용률)*100,1)) %>% 
+        rename(시간 = time) 
+      
+      p = x %>%
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~이용률,  type = 'scatter', mode = 'lines', 
+                  fill = ~졸음쉼터, 
+                  color = ~졸음쉼터,
+                  line = list(shape = "spline"), 
+                  text = ~paste0(이용률,"%"),
+                  hoverinfo = "text",
+                  textposition = "inside") %>% 
+        add_text(x = 1.5, y = me*1.05, text = ~paste0("평균 ", round(me,1), "%"),
+                 hoverinfo ="text", showlegend = F) %>% 
+        add_lines(x = 0:24, y = me, showlegend = F,
+                  text = ~paste0("평균"),
+                  hoverinfo ="text",
+                  textposition = "inside",
+                  line = list(color = "grey",
+                              width = 1,
+                              dash = 'dot')) 
+      }
+    
+    p %>%
+      layout(
+        xaxis = list(title = "",
+                     fixedrange = T),
+        yaxis = list(title = "",
+                     fixedrange = T),
+        plot_bgcolor  = "rgba(0, 0, 0, 0)",
+        paper_bgcolor = "rgba(0, 0, 0, 0)"
+      ) %>% 
+      config(displayModeBar = F)
   })
   
-  # 일간 이용률 : 쉼터
-  output$share_plot_daily_loc <- renderPlotly({
-    share_() %>%
-      group_by(시간 = hour(time)) %>%  
-      summarise(across(-time, list(mean))) %>% 
-      gather(key = "센서", value = "이용률", -시간) %>% 
-      group_by(졸음쉼터 = str_sub(센서,1,2), 시간) %>% 
-      summarise(평균_이용률 = mean(이용률)) %>% 
-      ggplot() +
-      geom_line(aes(x = 시간, y = 평균_이용률, color = 졸음쉼터)) +
-      ylab("평균 이용률 (%)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
-  })
+
   
-  # 일간 이용률 : 주차면
-  output$share_plot_daily_lot <- renderPlotly({
-    share_() %>%
-      group_by(시간 = hour(time)) %>%  
-      summarise(across(-time, list(mean))) %>% 
-      gather(key = "센서", value = "이용률", -시간) %>% 
-      group_by(주차면 = 센서, 시간) %>% 
-      summarise(평균_이용률 = mean(이용률)) %>% 
-      ggplot() +
-      geom_line(aes(x = 시간, y = 평균_이용률, color = 주차면)) +
-      ylab("평균 이용률 (%)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
-  })
-  
-  # 일간 이용건수 : 전체 
+  # 일간 이용건수 
   output$count_plot_daily <- renderPlotly({
     nn = sensor.name() %>% length()
     
@@ -678,32 +680,27 @@ server <- function(input, output) {
     peak.start = min(which(x$이용건수 > 1.5*mean(x$이용건수)))
     peak.end = max(which(x$이용건수 > 1.5*mean(x$이용건수)))
     
+    me = round(mean(x$이용건수),0)
+      
     if(input$stat_type == "all"){
       
      p = x %>% 
         plot_ly() %>% 
         add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line",
+                  line = list(shape = "spline"),
                   text = ~paste0(시간, "시 \n ", 이용건수, "건"),
                   hoverinfo = "text",
                   textposition = "inside"
         ) %>% 
-        add_lines(x = 0:24, y = ~mean(이용건수), showlegend = F,
-                  text = ~paste0("평균"),
-                  hoverinfo ="text",
-                  textposition = "inside",
-                  line = list(color = "grey",
-                              width = 1,
-                              dash = 'dot')) %>% 
         layout(shapes = list(type = "rect", fillcolor = "red",
                              line = list(color = "red"),
                              opacity = 0.2,
                              y0 = 0, y1 = ~max(이용건수), x0 = peak.start, x1 = peak.end)) %>% 
         add_lines(x = peak.start, y = ~range(0,max(이용건수)), showlegend = F, color = "red") %>%  
         add_lines(x = peak.end, y = ~range(0,max(이용건수)), showlegend = F, color = "red") %>%  
-        add_text(x = (peak.start + peak.end)/2 , y = ~mean(이용건수)*1.05,
+        add_text(x = (peak.start + peak.end)/2 , y = ~max(이용건수)*.2,
                  hoverinfo ="text",
-                 showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") ) %>% 
-        add_text(x = .5, y = ~mean(이용건수)*1.05, text = "평균", hoverinfo ="text", showlegend = F) 
+                 showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") ) 
       } else {
         
         x = event_table %>% 
@@ -721,16 +718,19 @@ server <- function(input, output) {
                     hoverinfo = "text",
                     textposition = "inside",
                     color = ~졸음쉼터
-          ) %>% 
-          add_lines(x = 0:24, y = ~mean(이용건수), showlegend = F,
-                    text = ~paste0("평균"),
-                    hoverinfo ="text",
-                    textposition = "inside",
-                    line = list(color = "grey",
-                                width = 1,
-                                dash = 'dot'))
+          ) 
+
       }
+    
     p %>%
+      add_text(x = 1, y = me*1.05, text = paste0("평균 ",me,"건"), hoverinfo ="text", showlegend = F) %>% 
+      add_lines(x = 0:24, y = me, showlegend = F,
+                text = ~paste0("평균"),
+                hoverinfo ="text",
+                textposition = "inside",
+                line = list(color = "grey",
+                            width = 1,
+                            dash = 'dot')) %>% 
       layout(
         xaxis = list(title = "",
                      fixedrange = T),
@@ -759,36 +759,83 @@ server <- function(input, output) {
               Rowv = NA,
               scale =  "column")
   })
-  # 일간 이용시간 : 전체 
-  output$time_plot_daily_all <- renderPlotly({
-    event_() %>% group_by(시간 = hour(주차시각)) %>% 
-      summarise(평균점유시간 = mean(as.numeric(점유시간))/60) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 평균점유시간),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 체류시간 (분)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
+  
+  # 일간 이용시간
+  output$time_plot_daily <- renderPlotly({
+      x = event_() %>% 
+        group_by(시간 = hour(주차시각)) %>% 
+        summarise(체류시간 = round(mean(점유시간)/60,1))
+      me = round(mean(x$체류시간),1)
+    
+    if(input$stat_type == "all"){
+      
+      if(x$시간[which(x$체류시간 == max(x$체류시간))] <= 5){
+        peak.start = 0
+        peak.end = max(which(x$체류시간 > 1.5*mean(x$체류시간) & x$시간 <= 5)) 
+        
+      } else {
+        peak.start = min(which(x$체류시간 > 1.5*mean(x$체류시간)))
+        peak.end = max(which(x$체류시간 > 1.5*mean(x$체류시간)))
+      }
+      
+      p = x %>% 
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~체류시간,  type="scatter", mode="line", 
+                  line = list(shape = "spline"), 
+                  text = ~paste0("\n ", 체류시간, "분"),
+                  hoverinfo = "text",
+                  textposition = "inside"
+        )  %>% 
+        layout(shapes = list(type = "rect", fillcolor = "red",
+                             line = list(color = "red"),
+                             opacity = 0.2,
+                             y0 = 0, y1 = ~max(체류시간), x0 = peak.start, x1 = peak.end)) %>% 
+        add_lines(x = peak.start, y = ~range(0,max(체류시간)), showlegend = F, color = "red") %>%  
+        add_lines(x = peak.end, y = ~range(0,max(체류시간)), showlegend = F, color = "red") %>%  
+        add_text(x = (peak.start + peak.end)/2 , y = ~max(체류시간)*.2,
+                 hoverinfo ="text",
+                 showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") )
+    } else {
+      x = event_() %>% 
+        group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
+        summarise(체류시간 = round(mean(점유시간)/60,1))
+      
+      p = x %>% 
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~체류시간,  type="scatter", mode="line", 
+                  line = list(shape = "spline"), 
+                  fill = ~졸음쉼터,
+                  text = ~paste0("\n ", 체류시간, "분"),
+                  hoverinfo = "text",
+                  textposition = "inside",
+                  color = ~졸음쉼터
+        ) 
+    }
+    
+    p %>%
+      add_text(x = 1.5, y = me*1.05, text = ~paste0("평균 ", me, "분"),
+               hoverinfo ="text", showlegend = F) %>% 
+      add_lines(x = 0:24, y = me, showlegend = F,
+                text = ~paste0("평균"),
+                hoverinfo ="text",
+                textposition = "inside",
+                line = list(color = "grey",
+                            width = 1,
+                            dash = 'dot')) %>% 
+      layout(
+        xaxis = list(title = "",
+                     fixedrange = T),
+        yaxis = list(title = "",
+                     fixedrange = T),
+        plot_bgcolor  = "rgba(0, 0, 0, 0)",
+        paper_bgcolor = "rgba(0, 0, 0, 0)"
+      ) %>% 
+      config(displayModeBar = F)
+    
   })
 
-  # 일간 이용시간 : 쉼터별
-  output$time_plot_daily_loc <- renderPlotly({
-    event_() %>% group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
-      summarise(평균점유시간 = mean(as.numeric(점유시간))/60) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 평균점유시간, fill = 졸음쉼터),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 체류시간 (분)") +
-      theme_bw() 
-  })  
-  
-  # 일간 이용시간 : 주차면별
-  output$time_plot_daily_lot <- renderPlotly({
-    event_() %>% group_by(센서, 시간 = hour(주차시각)) %>% 
-      summarise(평균점유시간 = mean(as.numeric(점유시간))/60) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 평균점유시간, fill = 센서),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 체류시간 (분)") +
-      theme_bw() 
-  })
+
+
   
   
   
@@ -839,139 +886,7 @@ server <- function(input, output) {
         filter(as_date(time) <= date.max & as_date(time) >= date.min) 
   })
   
-  # pie oven 
-
-  # 파이 차트 
-  output$pie_daily_1 <- renderPlot({
-    data = event_()
-    stat = input$stat_type
-    sensor = "대신"
-    
-    if(as.character(stat) == "이용건수"){
-      x = data %>% 
-        filter(졸음쉼터 == sensor) %>% 
-        group_by(센서) %>% 
-        summarise(이용건수 = n()) %>% 
-        arrange(desc(이용건수)) %>% 
-        mutate(frac = 이용건수/sum(이용건수),
-               ymax = cumsum(frac),
-               ymin = c(0, head(ymax, -1)),
-               label_position = (ymax + ymin) /2, 
-               label = paste0(str_remove_all(센서,"\\D"), " : ",prettyNum(frac*100, digits = 3), "%")) 
-      
-      }else if(as.character(stat) == "체류시간"){
-        x = data %>%  
-          filter(졸음쉼터 == sensor) %>% 
-          group_by(센서) %>% 
-          summarise(점유시간 = as.numeric(mean(점유시간))) %>% 
-          arrange(desc(점유시간)) %>% 
-          mutate(frac = 점유시간/sum(점유시간),
-                 ymax = cumsum(frac),
-                 ymin = c(0, head(ymax, -1)),
-                 label_position = (ymax + ymin) /2, 
-                 label = paste0(str_remove_all(센서,"\\D"), " : ",prettyNum(frac*100, digits = 3), "%")) 
-      }
-    
-    x %>% ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=센서)) +
-      scale_fill_brewer(palette="Spectral") +
-      geom_rect() +
-      geom_label(x=3, aes(y=label_position, label=label), size=3) +
-      coord_polar(theta="y") + 
-      xlim(c(-1, 4)) +
-      theme_void() +
-      ggtitle(paste0(sensor," ",stat)) + 
-      theme(legend.position = "none",
-            panel.background = element_rect(fill= '#F7F7F7', color = '#f7f7f7'), 
-            plot.background = element_rect(fill='#F7F7F7', color = '#f7f7f7'))
-  })
   
-  # 파이 차트 
-  output$pie_daily_2 <- renderPlot({
-    data = event_()
-    stat = input$stat_type
-    sensor = "영천"
-    
-    if(as.character(stat) == "이용건수"){
-      x = data %>% 
-        filter(졸음쉼터 == sensor) %>% 
-        group_by(센서) %>% 
-        summarise(이용건수 = n()) %>% 
-        arrange(desc(이용건수)) %>% 
-        mutate(frac = 이용건수/sum(이용건수),
-               ymax = cumsum(frac),
-               ymin = c(0, head(ymax, -1)),
-               label_position = (ymax + ymin) /2, 
-               label = paste0(str_remove_all(센서,"\\D"), " : ",prettyNum(frac*100, digits = 3), "%")) 
-      
-      }else if(as.character(stat) == "체류시간"){
-        x = data %>%  
-          filter(졸음쉼터 == sensor) %>% 
-          group_by(센서) %>% 
-          summarise(점유시간 = as.numeric(mean(점유시간))) %>% 
-          arrange(desc(점유시간)) %>% 
-          mutate(frac = 점유시간/sum(점유시간),
-                 ymax = cumsum(frac),
-                 ymin = c(0, head(ymax, -1)),
-                 label_position = (ymax + ymin) /2, 
-                 label = paste0(str_remove_all(센서,"\\D"), " : ",prettyNum(frac*100, digits = 3), "%")) 
-      }
-    
-    x %>% ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=센서)) +
-      scale_fill_brewer(palette="Spectral") +
-      geom_rect() +
-      geom_label(x=3, aes(y=label_position, label=label), size=3) +
-      coord_polar(theta="y") + 
-      xlim(c(-1, 4)) +
-      theme_void() +
-      ggtitle(paste0(sensor," ",stat)) + 
-      theme(legend.position = "none",
-            panel.background = element_rect(fill= '#F7F7F7', color = '#f7f7f7'), 
-            plot.background = element_rect(fill='#F7F7F7', color = '#f7f7f7'))
-  })
-  
-  # 파이 차트 
-  output$pie_daily_3 <- renderPlot({
-    data = event_()
-    stat = input$stat_type
-    sensor = "옥천"
-    
-    if(as.character(stat) == "이용건수"){
-      x = data %>% 
-        filter(졸음쉼터 == sensor) %>% 
-        group_by(센서) %>% 
-        summarise(이용건수 = n()) %>% 
-        arrange(desc(이용건수)) %>% 
-        mutate(frac = 이용건수/sum(이용건수),
-               ymax = cumsum(frac),
-               ymin = c(0, head(ymax, -1)),
-               label_position = (ymax + ymin) /2, 
-               label = paste0(str_remove_all(센서,"\\D"))) 
-      
-      }else if(as.character(stat) == "체류시간"){
-        x = data %>%  
-          filter(졸음쉼터 == sensor) %>% 
-          group_by(센서) %>% 
-          summarise(점유시간 = as.numeric(mean(점유시간))) %>% 
-          arrange(desc(점유시간)) %>% 
-          mutate(frac = 점유시간/sum(점유시간),
-                 ymax = cumsum(frac),
-                 ymin = c(0, head(ymax, -1)),
-                 label_position = (ymax + ymin) /2, 
-                 label = paste0(str_remove_all(센서,"\\D"))) 
-      }
-    
-    x %>% ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=센서)) +
-      scale_fill_brewer(palette="Spectral") +
-      geom_rect() +
-      geom_label(x=3, aes(y=label_position, label=label), size=3) +
-      coord_polar(theta="y") + 
-      xlim(c(-1, 4)) +
-      theme_void() +
-      ggtitle(paste0(sensor," ",stat)) + 
-      theme(legend.position = "none",
-            panel.background = element_rect(fill= '#F7F7F7', color = '#f7f7f7'), 
-            plot.background = element_rect(fill='#F7F7F7', color = '#f7f7f7'))
-  })
   
 
 }# 
