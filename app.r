@@ -9,6 +9,11 @@ library(bslib)
 library(plotly)
 library(DT)
 library(shiny)
+library(RColorBrewer)
+
+colfunc <- colorRampPalette(c("red", "yellow","orange"))
+colors_list_30 <- colfunc(30)
+colors_list_5 <- colfunc(10)
 
 options(shiny.maxRequestSize=200*1024^2) ## 파일 업로드 제한을 200
 
@@ -20,8 +25,17 @@ holiday_list = c("2022-01-01", "2022-01-31", "2022-02-01", "2022-02-02",
 
 def_data = read_xlsx("D:/shinydev/iot_sensor/def.xlsx")
 
-
-colfunc <- colorRampPalette(c("green","yellow", "red"))
+vline <- function(x = 0, color = "green") {
+  list(
+    type = "line",
+    y0 = 0,
+    y1 = 1,
+    yref = "paper",
+    x0 = x,
+    x1 = x,
+    line = list(color = color, dash="dot")
+  )
+}
 
 time_share <- function(from, to, diff) {
   diff = as.numeric(diff)
@@ -99,60 +113,57 @@ ui <- navbarPage("주차센서 대시보드",
     sidebarPanel(width = 5,
            fluidRow(
                  uiOutput("date_range"), 
-                 radioGroupButtons("stat_type",
-                                   label = "분석 단위",
-                                   choices = c(
-                                      "전체" = "all",
-                                      "졸음쉼터" = "loc",
-                                      "주차면" = "lot"),
-                                   justified = T,
-                                   width = "100%"),
-                  
 
                  hr()
-                 
                  ),
-      
+          # 이용건 수 등 요약 부분 들어갈 파트 
            fluidRow(
-             dataTableOutput("event_summary_daily"),
-             box(width = 12, status = "info", solidHeader = TRUE,
-                 )),
+             #dataTableOutput("event_summary_daily"),
+             ),
+           
+           # 위치별 그래프 들어갈 부분 
            fluidRow(
-             #plotOutput("pie_daily_1", width = "33%", height = "200px"),
-             #plotOutput("pie_daily_2", width = "33%", height = "200px"),
-             #plotOutput("pie_daily_3", width = "33%", height = "200px"),
+             selectInput(inputId = "select_stat_type",
+                         label = h5("위치별 이용현황"),
+                         choices = c("이용건수" = "count",
+                                     "점유시간" = "time",
+                                     "이용률" = "share"),
+                         selected = "count",
+                         width = 400),
+             plotlyOutput("hist_daily_a")
            ),
     ),
     
     # 그래프 들어갈 부분 
     mainPanel(position = "right",
               width = 7,
+              radioGroupButtons("stat_type",
+                                label = "분석 단위",
+                                choices = c(
+                                  "전체" = "all",
+                                  "위치별" = "loc",
+                                  "히트맵" = "heatmap"),
+                                justified = T,
+                                width = "100%"),
+              
                 conditionalPanel(
-                  condition = "input.stat_type == 'all'",
+                  condition = "input.stat_type != 'heatmap'",
                          h6("일간 이용률"),
                          plotlyOutput("share_plot_daily_all", width = "100%", height = "230px"),
                          h6("일간 이용건수"),
-                         plotlyOutput("count_plot_daily_all", width = "100%", height = "230px"),
+                         plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
                          h6("일간 체류시간"),
                          plotlyOutput("time_plot_daily_all", width = "100%", height = "230px"),
                          ),
                 conditionalPanel(
-                  condition = "input.stat_type == 'loc'",
+                  condition = "input.stat_type == 'heatmap'",
                          h6("일간 이용률"),
                          plotlyOutput("share_plot_daily_loc", width = "100%", height = "230px"),
                          h6("일간 이용건수"),
-                         plotlyOutput("count_plot_daily_loc", width = "100%", height = "230px"),
                          h6("일간 체류시간"),
                          plotlyOutput("time_plot_daily_loc", width = "100%", height = "230px"),
                          ),
-                conditionalPanel(
-                  condition = "input.stat_type == 'lot'",
-                         plotOutput("heatmap_daily_lot", width = "100%", height = "250px"),
-                         plotlyOutput("share_plot_daily_lot", width = "100%", height = "230px"),
-                         plotlyOutput("count_plot_daily_lot", width = "100%", height = "230px"),
-                         plotlyOutput("time_plot_daily_lot", width = "100%", height = "230px"),
-                         ),
-                        ),
+                        ), # main 
     
     )#side
   ),#tab
@@ -496,28 +507,116 @@ server <- function(input, output) {
   # event summary 
   event_s<- reactive({
     data = event_()
-    share = share_s()
-    
-    x = share %>% group_by(졸음쉼터) %>% 
-      summarise(평균_이용률 = mean(평균_이용률), 
-                  최대이용률 = max(최대_이용률))
-    
-    ret = data %>%
-      group_by(졸음쉼터) %>% 
-      summarise(이용건수 = n(),
-                `평균 체류시간(분)` = prettyNum(as.numeric(mean(점유시간)/60), digits = 4),
-                `최대 체류시간(분)` = prettyNum(as.numeric(max(점유시간)/60), digits = 4)) %>%
-      inner_join(x, by = c("졸음쉼터")) %>% 
-      t()
-      
-    colnames(ret) = ret[1,]
-    return(ret[-1,])
+
   })
   
   
   output$event_summary_daily <- renderDataTable(
     event_s()
   )
+  
+  # 위치별 이용현황 캔들차트 
+  output$hist_daily_a <- renderPlotly({
+    data = event_()
+    if(input$select_stat_type == "count"){
+      data %>% 
+        group_by(센서) %>% 
+        summarise(이용건수 = n()) %>% 
+        arrange(desc(이용건수)) %>% 
+        head(5) %>% 
+        
+        
+        plot_ly() %>% 
+        add_trace(x = ~이용건수, y = ~센서, type = "bar",
+                  text = ~paste0(이용건수, "건"),
+                  hoverinfo = "text",
+                  textposition = "inside",
+                  marker = list(color = colors_list_5)
+        ) %>% 
+        layout(
+          title = "이용건수 상위 5",
+          xaxis = list(title = "", 
+                       fixedrange = T),
+          yaxis = list(title = "",
+                       categoryorder = "array",
+                       categoryarray = ~이용건수,
+                       autorange="reversed",
+                       fixedrange = T,
+                       size=5),
+          plot_bgcolor  = "rgba(0, 0, 0, 0)",
+          paper_bgcolor = "rgba(0, 0, 0, 0)"
+        ) %>% 
+        config(displayModeBar = F)
+      
+    } else if(input$select_stat_type == "time"){
+      data %>% 
+        group_by(센서) %>% 
+        summarise(체류시간 = round(mean(점유시간)/60,1)) %>% 
+        arrange(desc(체류시간)) %>% 
+        head(5) %>% 
+        
+        plot_ly() %>% 
+        add_trace(x = ~체류시간, y = ~센서, type = "bar",
+                  text = ~paste0(체류시간, "분"),
+                  hoverinfo = "text",
+                  textposition = "inside",
+                  marker = list(color = colors_list_5)
+        ) %>% 
+        layout(
+          title = list (text = "평균 체류시간 상위 5",
+                        size = 4),
+          
+          xaxis = list(title = "", 
+                       fixedrange = T),
+          yaxis = list(title = "",
+                       categoryorder = "array",
+                       categoryarray = ~체류시간,
+                       autorange="reversed",
+                       fixedrange = T,
+                       size=5),
+          plot_bgcolor  = "rgba(0, 0, 0, 0)",
+          paper_bgcolor = "rgba(0, 0, 0, 0)"
+        ) %>% 
+        config(displayModeBar = F)
+      
+    } else if(input$select_stat_type == "share"){
+      share_() %>% 
+        select(-time) %>% 
+        summarise(across(everything(), list(mean))) %>% 
+        gather("센서", "이용률") %>% 
+        arrange(desc(이용률)) %>% 
+        head(5) %>% 
+        mutate(
+          센서 = str_remove(센서, "_1"),
+          센서 = str_remove(센서, "졸음쉼터."),
+          이용률 = round(이용률*100, 1)
+        ) %>% 
+        
+        plot_ly() %>% 
+        add_trace(x = ~이용률, y = ~센서, type = "bar",
+                  text = ~paste0(이용률, "%"),
+                  hoverinfo = "text",
+                  textposition = "inside",
+                  marker = list(color = colors_list_5)
+        ) %>% 
+        layout(
+          title = "평균 이용률 상위 5",
+          xaxis = list(title = "", 
+                       fixedrange = T),
+          yaxis = list(title = "",
+                       categoryorder = "array",
+                       categoryarray = ~이용률,
+                       autorange="reversed",
+                       fixedrange = T,
+                       size=5),
+          plot_bgcolor  = "rgba(0, 0, 0, 0)",
+          paper_bgcolor = "rgba(0, 0, 0, 0)"
+        ) %>% 
+        config(displayModeBar = F)
+    }
+    
+  })
+  
   
   
   
@@ -569,36 +668,83 @@ server <- function(input, output) {
   })
   
   # 일간 이용건수 : 전체 
-  output$count_plot_daily_all <- renderPlotly({
-    event_() %>% group_by(시간 = hour(주차시각)) %>% 
-      summarise(이용건수 = n()) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 이용건수),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 이용건수 (건)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
+  output$count_plot_daily <- renderPlotly({
+    nn = sensor.name() %>% length()
+    
+    x = event_() %>% 
+      group_by(시간 = hour(주차시각)) %>% 
+      summarise(이용건수 = n()) 
+    
+    peak.start = min(which(x$이용건수 > 1.5*mean(x$이용건수)))
+    peak.end = max(which(x$이용건수 > 1.5*mean(x$이용건수)))
+    
+    if(input$stat_type == "all"){
+      
+     p = x %>% 
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line",
+                  text = ~paste0(시간, "시 \n ", 이용건수, "건"),
+                  hoverinfo = "text",
+                  textposition = "inside"
+        ) %>% 
+        add_lines(x = 0:24, y = ~mean(이용건수), showlegend = F,
+                  text = ~paste0("평균"),
+                  hoverinfo ="text",
+                  textposition = "inside",
+                  line = list(color = "grey",
+                              width = 1,
+                              dash = 'dot')) %>% 
+        layout(shapes = list(type = "rect", fillcolor = "red",
+                             line = list(color = "red"),
+                             opacity = 0.2,
+                             y0 = 0, y1 = ~max(이용건수), x0 = peak.start, x1 = peak.end)) %>% 
+        add_lines(x = peak.start, y = ~range(0,max(이용건수)), showlegend = F, color = "red") %>%  
+        add_lines(x = peak.end, y = ~range(0,max(이용건수)), showlegend = F, color = "red") %>%  
+        add_text(x = (peak.start + peak.end)/2 , y = ~mean(이용건수)*1.05,
+                 hoverinfo ="text",
+                 showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") ) %>% 
+        add_text(x = .5, y = ~mean(이용건수)*1.05, text = "평균", hoverinfo ="text", showlegend = F) 
+      } else {
+        
+        x = event_table %>% 
+          mutate(졸음쉼터 = str_sub(센서, 1,2)) %>% 
+          group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
+          summarise(이용건수 = n()) 
+        
+        
+        p = x %>% 
+          plot_ly() %>% 
+          add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line", 
+                    line = list(shape = "spline"), 
+                    fill = ~졸음쉼터,
+                    text = ~paste0(졸음쉼터, "\n ", 이용건수, "건"),
+                    hoverinfo = "text",
+                    textposition = "inside",
+                    color = ~졸음쉼터
+          ) %>% 
+          add_lines(x = 0:24, y = ~mean(이용건수), showlegend = F,
+                    text = ~paste0("평균"),
+                    hoverinfo ="text",
+                    textposition = "inside",
+                    line = list(color = "grey",
+                                width = 1,
+                                dash = 'dot'))
+      }
+    p %>%
+      layout(
+        xaxis = list(title = "",
+                     fixedrange = T),
+        yaxis = list(title = "",
+                     fixedrange = T),
+        plot_bgcolor  = "rgba(0, 0, 0, 0)",
+        paper_bgcolor = "rgba(0, 0, 0, 0)"
+      ) %>% 
+      config(displayModeBar = F)
+    
   })
+
   
-  # 일간 이용건수 : 졸음쉼터 
-  output$count_plot_daily_loc <- renderPlotly({
-    event_() %>% group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
-      summarise(이용건수 = n()) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 이용건수, fill = 졸음쉼터),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 이용건수 (건)") +
-      scale_fill_brewer(palette="Spectral") +
-      theme_bw() 
-  })
-  
-  # 일간 이용건수 : 주차면 
-  output$count_plot_daily_lot <- renderPlotly({
-    event_() %>% group_by(센서, 시간 = hour(주차시각)) %>% 
-      summarise(이용건수 = n()) %>% ggplot() +
-      geom_col(aes(x = 시간, y = 이용건수, fill = 센서),
-               position = position_dodge(preserve = 'single')) +
-      ylab("평균 이용건수 (건)") +
-      theme_bw() 
-  })
+
   
   # 히트맵 
   output$heatmap_daily_lot <- renderPlot({
