@@ -1,6 +1,8 @@
 library(data.table)
 library(tidyverse)
 library(lubridate)
+install.packages("splitstackshape")
+library(splitstackshape)
 
 raw_dt = data.table(raw)
 
@@ -83,12 +85,17 @@ share = share[,t := (sequence(.N)-1), by = .(센서, 주차시각)
         default = 0)
         
       ][,.(센서, 시작시각, 점유시간)
-      ][,.(점유시간 = round(sum(점유시간)/3600*100, digits = 2)), by = .(센서, 시간 = 시작시각)]
-
-share_ = dcast(share, 시간 ~ 센서, value.var = ("점유시간"), fill = 0)
+      ][,.(점유시간 = round(sum(점유시간)/3600*100, digits = 2)), by = .(센서, 시간 = 시작시각)] %>% 
+      
+      dcast(시간 ~ 센서, value.var = ("점유시간"), fill = 0)
 
 ## share daily
 
-share_daily = share[,.(점유율 = mean(점유시간)), by = .(센서, 시간 = hour(시간))
-                    ][order(센서,시간)]
+share_daily = share[,lapply(.SD, function(x) round(mean(x),digits = 2)), by = .(시간 = hour(시간))]
+
+
+
+
+
+
 
