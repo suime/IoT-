@@ -8,8 +8,9 @@ library(shinythemes)
 library(bslib)
 library(plotly)
 library(DT)
-library(shiny)
 library(RColorBrewer)
+library(data.table)
+library(dtplyr)
 
 colfunc <- colorRampPalette(c("red", "yellow","orange"))
 colfunc_gyr = colorRampPalette(c("forestgreen", "yellow","orange","red"))
@@ -19,349 +20,273 @@ colors_list_5 <- colfunc(10)
 options(shiny.maxRequestSize=200*1024^2) ## 파일 업로드 제한을 200
 
 holiday_list = c("2022-01-01", "2022-01-31", "2022-02-01", "2022-02-02",
-  "2022-03-01", "2022-05-05", "2022-05-08", "2022-06-06",
-  "2022-08-15", "2022-09-09", "2022-09-10", "2022-09-11",
-  "2022-09-12", "2022-10-03", "2022-10-09", "2022-10-10", "2022-12-25") %>% 
+                 "2022-03-01", "2022-05-05", "2022-05-08", "2022-06-06",
+                 "2022-08-15", "2022-09-09", "2022-09-10", "2022-09-11",
+                 "2022-09-12", "2022-10-03", "2022-10-09", "2022-10-10", "2022-12-25") %>% 
   ymd()
 
 week.name.ko = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-def_data = read_xlsx("def.xlsx")
-
-
-
-time_share <- function(from, to, diff) {
-  diff = as.numeric(diff)
-  time.from = floor_date(from, unit = "hour")
-  time.to = floor_date(to, unit = "hour")
-  time.seq = seq.POSIXt(
-    time.from,
-    time.to, 
-    by = "hour")
-  n = length(time.seq) 
-  
-  frac.start = difftime(ceiling_date(from, unit = "hour"), from, units = 'sec') %>% as.numeric()
-  frac.end = difftime(to, floor_date(to, unit = "hour"), units = 'sec') %>% as.numeric()
-  
-  if(n == 1){
-    setNames(c(diff), c(time.from)) %>% as.data.frame()}
-  else{
-    setNames(c(frac.start, rep(3600, n-2), frac.end), c(time.seq)) %>% as.data.frame()}
-}
+def_data = read_xlsx("E:/2022/Iot/1-7.xlsx")
 
 
 ui <- navbarPage("주차센서 대시보드", 
-  theme = bs_theme(bootswatch = "flatly"),
-  
-## 
-## 00. 파일 업로드 
-  tabPanel("파일 읽기",
-           icon = icon("cloud-upload-alt"),
-    sidebarLayout(
-      sidebarPanel(
-        width = 4,
-        radioGroupButtons(
-          inputId = "source",
-          label = "분석 파일 선택하기",
-          choices = c(
-            "샘플 파일" = "def",
-            "사용자 파일" = "file"),
-          justified = T
-        ),
-        
-        conditionalPanel(
-          condition = "input.source == 'file'",
-          fileInput("raw_data",
-                    "주차센서 데이터 업로드",
-                    accept = ".xlsx",
-                    buttonLabel = "찾아보기",
-                    placeholder = ".xlsx"),
-          
-          ),
-        fluidRow(
-          width = '100%',
-          actionBttn("file_upload",
-                     label = "새로고침",
-                     icon = icon("sync"),
-                     style = "fill",
-                     no_outline = F,
-                     color = "primary",
-                     size = "sm"),
-          hr()),
-        
-      ),
-      mainPanel(
-        position = "left",
-        dataTableOutput("rare_dt")
-      )
-    ) # sidebar
-  ),#tab
-
-
-  ## 01. 일간 이용 현황분석 
-  tabPanel("일간 이용현황 분석",
-           icon = icon("calendar"),
-    sidebarLayout(
-    # 일자 및 옵션 선택 
-    sidebarPanel(width = 5,
-           fluidRow(
-                 uiOutput("date_range"), 
-
-                 hr()
-                 ),
-          # 이용건 수 등 요약 부분 들어갈 파트 
-           fluidRow(
-             #dataTableOutput("event_summary_daily"),
-             ),
-           
-           # 위치별 그래프 들어갈 부분 
-           fluidRow(
-             selectInput(inputId = "select_stat_type",
-                         label = h5("위치별 이용현황"),
-                         choices = c("이용건수" = "count",
-                                     "점유시간" = "time",
-                                     "이용률" = "share"),
-                         selected = "count",
-                         width = 400),
-             plotlyOutput("hist_daily_a")
-           ),
-    ),
-    
-    # 그래프 들어갈 부분 
-    mainPanel(position = "right",
-              width = 7,
-              radioGroupButtons("stat_type",
-                                label = "분석 단위",
+                 theme = bs_theme(bootswatch = "flatly"),
+                 
+                 ## 
+                 ## 00. 파일 업로드 
+                 tabPanel("파일 읽기",
+                          icon = icon("cloud-upload-alt"),
+                          sidebarLayout(
+                            sidebarPanel(
+                              width = 4,
+                              radioGroupButtons(
+                                inputId = "source",
+                                label = "분석 파일 선택하기",
                                 choices = c(
-                                  "전체" = "all",
-                                  "위치별" = "loc",
-                                  "히트맵" = "heatmap"),
-                                justified = T,
-                                width = "100%"),
-              
-                conditionalPanel(
-                  condition = "input.stat_type != 'heatmap'",
-                         h6("일간 평균 이용률"),
-                         plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
-                         h6("일간 이용건수"),
-                         plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
-                         h6("일간 평균 체류시간"),
-                         plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
-                         ),
-                conditionalPanel(
-                  condition = "input.stat_type == 'heatmap'",
-                         plotlyOutput("heatmap_daily", width = "100%", height = "600px")
-                         ),
-                        ), # main 
-    
-    )#side
-  ),#tab
-
-
-  ## 02. 주간 이용 현황분석 
-  tabPanel("주간 이용현황 분석",
-         icon = icon("calendar-week"),
-         sidebarLayout(
-           # 일자 및 옵션 선택 
-           sidebarPanel(width = 5,
-                        fluidRow(
-                          uiOutput("date_range_w"), 
-                          
-                          hr()
-                        ),
-                        # 이용건 수 등 요약 부분 들어갈 파트 
-                        fluidRow(
-                        ),
-                        
-                        # 위치별 그래프 들어갈 부분 
-                        fluidRow(
-                        ),
-           ),
-           
-           # 그래프 들어갈 부분 
-           mainPanel(position = "right",
-                     width = 7,
-                     radioGroupButtons("stat_type_week",
-                                       label = "분석 단위",
-                                       choices = c(
-                                         "전체" = "all",
-                                         "위치별" = "loc"),
-                                       justified = T,
-                                       width = "100%"),
-                     
-                     conditionalPanel(
-                       condition = "input.stat_type_w != 'heatmap'",
-                       h6("주간 평균 이용률"),
-                       plotlyOutput("share_plot_week", width = "100%", height = "230px"),
-                       h6("주간 이용건수"),
-                       plotlyOutput("count_plot_week", width = "100%", height = "230px"),
-                       h6("주간 평균 체류시간"),
-                       plotlyOutput("time_plot_week", width = "100%", height = "230px"),
-                     ),
-                     conditionalPanel(
-                       condition = "input.stat_type_w == 'heatmap'",
-                       plotlyOutput("heatmap_week", width = "100%", height = "600px")
-                     ),
-           ), # main 
-                      
-      )#side
- ),#tab
-  
-  ## 03. 오류 이용 현황분석 
-  tabPanel("오류 현황",
-           icon = icon("calendar-week"),
-           sidebarLayout(
-             sidebarPanel(width = 2,
-                          radioGroupButtons(
-                            inputId = "error_group",
-                            label = "범위 선택",
-                            choices = c(
-                              "주차쉼터별" = "1",
-                              "주차면별" = "2"),
-                            justified = T
-                          ),
-                          
-                          ),
-             
-             mainPanel(
-               position = "left",
-               tableOutput("error_dt"),
-             )
-           ) # sidebar
-  )#tab
-  
-  
+                                  "샘플 파일" = "def",
+                                  "사용자 파일" = "file"),
+                                justified = T
+                              ),
+                              
+                              conditionalPanel(
+                                condition = "input.source == 'file'",
+                                fileInput("raw_data",
+                                          "주차센서 데이터 업로드",
+                                          accept = ".xlsx",
+                                          buttonLabel = "찾아보기",
+                                          placeholder = ".xlsx"),
+                                
+                              ),
+                              fluidRow(
+                                width = '100%',
+                                actionBttn("file_upload",
+                                           label = "새로고침",
+                                           icon = icon("sync"),
+                                           style = "fill",
+                                           no_outline = F,
+                                           color = "primary",
+                                           size = "sm"),
+                                hr()),
+                              
+                            ),
+                            mainPanel(
+                              position = "left",
+                              dataTableOutput("rare_dt")
+                            )
+                          ) # sidebar
+                 ),#tab
+                 
+                 
+                 ## 01. 일간 이용 현황분석 
+                 tabPanel("일간 이용현황 분석",
+                          icon = icon("calendar"),
+                          sidebarLayout(
+                            # 일자 및 옵션 선택 
+                            sidebarPanel(width = 5,
+                                         fluidRow(
+                                           uiOutput("date_range"), 
+                                           
+                                           hr()
+                                         ),
+                                         # 이용건 수 등 요약 부분 들어갈 파트 
+                                         fluidRow(
+                                           #dataTableOutput("event_summary_daily"),
+                                         ),
+                                         
+                                         # 위치별 그래프 들어갈 부분 
+                                         fluidRow(
+                                           selectInput(inputId = "select_stat_type",
+                                                       label = h5("위치별 이용현황"),
+                                                       choices = c("이용건수" = "count",
+                                                                   "점유시간" = "time",
+                                                                   "이용률" = "share"),
+                                                       selected = "count",
+                                                       width = 400),
+                                           plotlyOutput("hist_daily_a")
+                                         ),
+                            ),
+                            
+                            # 그래프 들어갈 부분 
+                            mainPanel(position = "right",
+                                      width = 7,
+                                      radioGroupButtons("stat_type",
+                                                        label = "분석 단위",
+                                                        choices = c(
+                                                          "전체" = "all",
+                                                          "위치별" = "loc",
+                                                          "히트맵" = "heatmap"),
+                                                        justified = T,
+                                                        width = "100%"),
+                                      
+                                      conditionalPanel(
+                                        condition = "input.stat_type != 'heatmap'",
+                                        h6("일간 평균 이용률"),
+                                        plotlyOutput("share_plot_daily", width = "100%", height = "230px"),
+                                        h6("일간 이용건수"),
+                                        plotlyOutput("count_plot_daily", width = "100%", height = "230px"),
+                                        h6("일간 평균 체류시간"),
+                                        plotlyOutput("time_plot_daily", width = "100%", height = "230px"),
+                                      ),
+                                      conditionalPanel(
+                                        condition = "input.stat_type == 'heatmap'",
+                                        plotlyOutput("heatmap_daily", width = "100%", height = "600px")
+                                      ),
+                            ), # main 
+                            
+                          )#side
+                 ),#tab
+                 
+                 
+                 ## 02. 주간 이용 현황분석 
+                 tabPanel("주간 이용현황 분석",
+                          icon = icon("calendar-week"),
+                          sidebarLayout(
+                            # 일자 및 옵션 선택 
+                            sidebarPanel(width = 5,
+                                         fluidRow(
+                                           uiOutput("date_range_w"), 
+                                           
+                                           hr()
+                                         ),
+                                         # 이용건 수 등 요약 부분 들어갈 파트 
+                                         fluidRow(
+                                         ),
+                                         
+                                         # 위치별 그래프 들어갈 부분 
+                                         fluidRow(
+                                         ),
+                            ),
+                            
+                            # 그래프 들어갈 부분 
+                            mainPanel(position = "right",
+                                      width = 7,
+                                      radioGroupButtons("stat_type_week",
+                                                        label = "분석 단위",
+                                                        choices = c(
+                                                          "전체" = "all",
+                                                          "위치별" = "loc"),
+                                                        justified = T,
+                                                        width = "100%"),
+                                      
+                                      conditionalPanel(
+                                        condition = "input.stat_type_w != 'heatmap'",
+                                        h6("주간 평균 이용률"),
+                                        plotlyOutput("share_plot_week", width = "100%", height = "230px"),
+                                        h6("주간 이용건수"),
+                                        plotlyOutput("count_plot_week", width = "100%", height = "230px"),
+                                        h6("주간 평균 체류시간"),
+                                        plotlyOutput("time_plot_week", width = "100%", height = "230px"),
+                                      ),
+                                      conditionalPanel(
+                                        condition = "input.stat_type_w == 'heatmap'",
+                                        plotlyOutput("heatmap_week", width = "100%", height = "600px")
+                                      ),
+                            ), # main 
+                            
+                          )#side
+                 ),#tab
+                 
+                 ## 03. 오류 이용 현황분석 
+                 tabPanel("오류 현황",
+                          icon = icon("calendar-week"),
+                          sidebarLayout(
+                            sidebarPanel(width = 2,
+                                         radioGroupButtons(
+                                           inputId = "error_group",
+                                           label = "범위 선택",
+                                           choices = c(
+                                             "주차쉼터별" = "1",
+                                             "주차면별" = "2"),
+                                           justified = T
+                                         ),
+                                         
+                            ),
+                            
+                            mainPanel(
+                              position = "left",
+                              tableOutput("error_dt"),
+                            )
+                          ) # sidebar
+                 )#tab
+                 
+                 
 ) # ui 
-  
 
-    
-    
+
+
+
 ##
 server <- function(input, output) {
   
   ## raw - rare 파일 
-
-    rare_ <- reactive({
-      input$file_upload
-      isolate({
-        withProgress({
-          setProgress(message = "파일 전처리 중...")
-      
-          if(input$source == "def"){
-            y = def_data
-          } else {
-            x = input$raw_data
-            ext = tools::file_ext(x$datapath)
-            req(x)
-            validate(need(ext == "xlsx","Error : 정확한 파일을 업로드하세요."))
-            y = read_xlsx(x$datapath)}
-          
-          # ----- 파일 읽고 나서  ----
-          sensor.name = names(table(y$센서))
-          
-          y %>% rename(일시 = `송신일시(sendDate)`) %>% 
-            select(c(센서, 센서값, 일시)) %>% 
-            
-            #센서값 열 분할 
-            mutate(센서값 = str_remove_all(센서값, "[[a-zA-Z]|[가-힣]|[\\s]]+: "),
-                      일시 = as_datetime(일시)) %>% 
-            separate(센서값, 
-                        sep = ",", 
-                        into = c("장치구분", "검지기", "배터리", "장애", "RSSI", "SMR", "동작"), 
-                        convert = T, 
-                        extra = "merge") %>% 
-            
-            # 값 범주화 
-            mutate(장애 = ifelse(장애 == "51.0", "리셋 발생", 장애),
-                     동작 = case_when(
-                        동작 %in% c("2.0","오류") ~ "LoRa Reset 수신 후 부팅",
-                        동작 == "3.0" ~ "LoRa 전송오류 등으로 인한 자체 시스템 Reset",
-                        TRUE ~ 동작
-                     )) %>% 
-            
-            # 센서 이름에서 맨 앞의 주차센서 빼기 
-            mutate(
-              센서 = str_remove(센서, "^주차센서_"),
-              센서 = str_remove(센서, "졸음쉼터."),
-                    졸음쉼터 = str_sub(센서,1,2)) %>% 
-            
-            # 중복, 결측치 제거 
-            distinct() %>% 
-            na.omit() %>% 
-            
-            select(졸음쉼터, 센서, 검지기, 동작, 일시) %>% 
-            
-            arrange(센서, 일시) %>% 
-            
-            mutate(
-              
-              오류구분 = case_when(
-              동작 == "주차이벤트" ~ 0, 
-              동작 == "주기보고" ~ 1,
-              TRUE  ~ 2 ),
-              
-              오류구분 = case_when(
-              # 주기보고 다음 발생한 오류 
-              #lag(오류구분, default = 0) == 1  ~  3, 
-              
-              # 차량 주차 다음에 주기보고나 오류 메시지가 발생한 것 => 3 오류 처리 
-              검지기 == "차량주차" & lead(오류구분) != 0 & 오류구분 == 0 ~ 3,
-              
-              # 주차이고 다음 항목도 주차인 것 => 3 
-              센서 == lead(센서, default = last(sensor.name)) & 검지기 == "차량주차" &
-                검지기 == lead(검지기, default = "차량주차")  & 오류구분 == 0 ~ 3,
-              
-              # 출차이고 이전 항목도 출차인 것 => 3 
-              센서 == lag(센서, default = first(sensor.name)) & 검지기 == "차량출차" &
-                검지기 == lag(검지기, default = "차량출차")   & 오류구분 == 0 ~ 3,
-              
-              
-              센서 == lead(센서, default = last(sensor.name)) & month(as_datetime(일시)) != lead(month(as_datetime(일시))) & 검지기 == "차량주차"  ~ 3,
-              센서 == lag(센서, default = first(sensor.name)) & month(as_datetime(일시)) != lag(month(as_datetime(일시))) & 검지기 == "차량출차"  ~ 3,
-              
-              # 처음 / 마지막 데이터인데 출차 / 주차 인 경우 이벤트 오류 => 3 
-              센서 != lag(센서) & 검지기 == "차량출차" & 오류구분 == 0  ~ 3,
-              센서 != lead(센서) & 검지기 == "차량주차" & 오류구분 == 0 ~ 3,
-              
-              
-              TRUE ~ 오류구분
-                    ) 
-                ) 
-        })
-    })
-})
   
-
-  output$rare_dt <- renderDataTable({
-    data = rare_()
-    data %>%
-      mutate(
-        오류구분 = case_when(
-          오류구분 == 3 ~ "중복이벤트",
-          오류구분 == 2 ~ "통신 및 기기 오류",
-          오류구분 == 1 ~ "주기보고",
-          T ~ "정상"
-          )
-    )
+  
+  ## raw - rare 파일 
+  rare_ <- reactive({
+    
+    if(input$source == "def"){
+      y = as.data.table(def_data)
+    } else {
+      x = input$raw_data
+      ext = tools::file_ext(x$datapath)
+      req(x)
+      validate(need(ext == "xlsx","Error : 정확한 파일을 업로드하세요."))
+      y = as.data.table(read_xlsx(x$datapath))
+    }
+    
+    # 파일 확정 -------------
+    
+    y[, .(센서, 센서값, 일시 = `송신일시(sendDate)`)
+      
+      # 텍스트 값 trim 
+    ][,센서값 := str_remove_all(센서값, "[[a-zA-Z]|[가-힣]|[\\s]]+: ")
+    ][,센서 := str_remove_all(센서, "[주차센서_|졸음쉼터]")
+      
+      
+      # 값 분절하기 
+    ][,(cols_) := tstrsplit(센서값, ",")
+    ][,검지기 := str_remove_all(검지기, "차량")
+      
+      # 열 선택 
+    ][,.(센서, 검지기, 장애, 동작, 일시)
+      
+      # 동작 범주화 
+    ][검지기 != "초기부팅", 동작 := fcase(
+      동작 %in% c("오류","2.0","3.0"), "통신오류",
+      str_detect(동작,"LoRa"), "통신오류",
+      str_detect(동작,"고장"), "센서오류",
+      str_detect(동작,"주기"), "주기보고",
+      default = "정상")
+      
+      # 정렬 및 중복 겵측치 제외 
+    ][order(센서,일시)
+    ][,오류구분 := fcase(
+      센서 == shift(센서, type = 'lead') & 검지기 == "주차" & shift(검지기,type = 'lead') != "출차", 3, # 주차 이후 출차 아닌것 
+      센서 == shift(센서, type = 'lag') & 검지기 == "출차" & shift(검지기,type = 'lag') != "주차", 3, # 출차 이전 주차 아닌것
+      검지기 == "주차" & 센서 != shift(센서, type = "lead"), 3,
+      검지기 == "출차" & 센서 != shift(센서, type = "lag"), 3,
+      str_detect(동작,"오류"), 2, # 센서오류나 통신오류 인것 
+      동작 == "주기보고", 1, # 주기보고 
+      default = 0) # 정상 
+      
+    ][,.(센서, 검지기, 일시, 오류구분)]
   })
   
   
+  output$rare_dt <- renderDataTable({
+    data = rare_()
 
-  
+      
+  })
   
   
   # 00. 분석 기간 선택 
   date.range <- reactive({
     min = rare_()$일시 %>% as_datetime() %>% min()  
     max = rare_()$일시 %>% as_datetime() %>% max()
-  return(list(min, max))
+    return(list(min, max))
   })
-  
-  # 00. 센서이름 
-  sensor.name <- reactive({
-    data = rare_()
-    names(table(data$센서))
-  })
-  
+
   # 01. 분석 기간 
   output$date_range <- renderText({
     
@@ -410,39 +335,15 @@ server <- function(input, output) {
   
   # 오류 발생 현황 요약 테이블 -----
   output$error_dt <- renderTable({
-    data = rare_()
-    y = input$error_group
+    n = ifelse(input$error_group == "2" , 10, 2)
+    x = rare_()
     
-    if(y == "2"){
-      x = data
-    } else {
-      x = data %>% mutate(센서 = str_sub(센서, 1, 2))
-    }
+    x[,.(정상 = sum(오류구분 == 0),
+         주기보고 = sum(오류구분 == 1),
+         통신기기오류 =  sum(오류구분 == 2),
+         중복오류 = sum(오류구분 == 3)),
+          keyby = (졸음쉼터 = str_sub(센서,1,n))]
     
-    x %>% 
-      group_by(센서 = str_remove_all(센서,"졸음쉼터")) %>% 
-      summarise(
-      정상 = sum(동작 == "주차이벤트" & 오류구분 == 0), 
-      
-      # 주기보고 및 이후 첫번째 이벤트 오류 
-      주기보고 = sum(오류구분 == 1), 
-      
-      # LoRa망 관련 오류 
-      통신오류 = sum(str_detect(동작,"^LoRa") & 오류구분 == 2),
-      
-      #센서오류
-      센서오류 = sum(str_detect(동작,"^레이더") & 오류구분 == 2),
-      
-      #초기부팅 
-      초기부팅 = sum(동작 == "초기 부팅"),
-      
-      
-      # 이벤트 오류 
-      중복오류 = sum(오류구분 == 3),
-      
-      # 합계 
-      합계 = sum(c_across(정상:중복오류))
-    )
   })
   
   
@@ -450,54 +351,42 @@ server <- function(input, output) {
   event <- reactive({
     data = rare_()
     
-    data %>% 
-      filter(오류구분 == 0) %>% 
-      
-      # 출차시각 
-      mutate(출차시각 = as_datetime(ifelse(검지기 == "차량주차" & 센서 == lead(센서), lead(일시), NA))) %>% 
-      
-      filter(!is.na(출차시각)) %>% 
-      
-      rename(주차시각 = 일시) %>% 
-      
-      mutate(
-        점유시간 = 출차시각 - as_datetime(주차시각),
-        요일 = weekdays(주차시각),
-        기간구분 = ifelse(
-          요일 %in% c("토요일", "일요일") | as_date(주차시각) %in% holiday_list, "휴일", "평일")
-      ) %>% 
-      
-      select(졸음쉼터, 센서, 요일, 기간구분, 주차시각, 출차시각, 점유시간) 
-      
+    data[오류구분 == 0
+    ][,출차시각 := fifelse(검지기 == "주차", shift(일시,type = "lead"),"0")
+    ][출차시각 != "0"
+    ][,c("주차시각", "출차시각") := lapply(.SD, as_datetime), .SDcols = c("일시", "출차시각") 
+    ][,체류시간 := as.numeric(출차시각 - 주차시각)
+    ][,.(센서, 주차시각, 출차시각, 체류시간)]
     
   })
-
+  
   
   ## event_date_filtered 
   event_ <- reactive({
     date.min = input$date_range_[1] %>% as_date()
     date.max = input$date_range_[2] %>% as_date()
     data = event()
-    
-    data %>% 
-      filter(as_date(주차시각) >= date.min & as_date(주차시각) <= date.max)
+    data[date.min <=  trunc.POSIXt(주차시각,"days") & trunc.POSIXt(주차시각,"days") <= date.max ]
   })
   
   ## event_week_filtered 
   event_w <- reactive({
     date.min = input$date_range_w[1] %>% as_date() 
     date.max = input$date_range_w[2] %>% as_date()
-    data = event()
+    data = event() %>%  tibble() 
     
     data %>% 
       filter(as_date(주차시각) >= date.min & as_date(주차시각) <= date.max)
   })
-
   
-
+  sensor.name <- reactive({
+    rare_()[,센서] %>% unique() %>% length()
+  })
+  
+  
   # 위치별 이용현황 캔들차트 
   output$hist_daily_a <- renderPlotly({
-    data = event_()
+    data = event_() %>% tibble() %>% 
     if(input$select_stat_type == "count"){
       data %>% 
         group_by(센서) %>% 
@@ -599,151 +488,124 @@ server <- function(input, output) {
   
   ## 점유율 데이터 차트 
   share <- reactive({
-    data = event() 
-    
-    sensor.name = sensor.name()
-    tx = data.frame(
-      time = seq.POSIXt(
-        from = date.range()[[1]] %>% as_datetime() %>% floor_date("hour"), 
-        to = date.range()[[2]] %>% as_datetime(), 
-        by = "hour"
-      ) %>% as.character() )
+      evt = event()
+      evt[, t := as.numeric(trunc.POSIXt(출차시각,"hours") - trunc.POSIXt(주차시각,"hours"))/3600]
     
     withProgress({
       setProgress(message = "이용률 계산 중...")
-      
-      for(i in sensor.name){
+        share = evt %>% map_df(rep, times = evt$t + 1)  %>% as.data.table()
         
-        z = data %>%
-          filter(센서 == i) 
-        
-        ret = pmap_dfr(list(from = z$주차시각, to = z$출차시각, diff = z$점유시간), time_share) %>% 
-          rownames_to_column("time") %>% 
-          mutate(time = str_remove_all(time, "\\.{3}.*"),
-                 time = ifelse(str_length(time) == 10, str_c(time, " 00:00:00"), time)) %>% 
-          group_by(time) %>% 
-          summarise(name = sum(., na.rm = T)) 
-        
-        
-        tx = merge(tx, ret, by = 'time', all = T)
-        incProgress(1/length(sensor.name))
-      }
-      names(tx) = c("time", sensor.name)
-    })
-    
-    tx = tx %>% mutate_at(.cols = -1,.funs = function(x) ifelse(is.na(x), 0,x/3600))
-    return(tx)
+        share = share[,t := (sequence(.N)-1), by = .(센서, 주차시각)
+        ][,시작시각 := trunc.POSIXt(주차시각,"hours") + 3600*t
+        ][,점유시간 := fcase(
+          
+          # 시작 끝 시간 같으면 그냥 넣기 
+          trunc.POSIXt(주차시각,"hours") == trunc.POSIXt(출차시각,"hours"), 체류시간,
+          
+          # 주차 == 시작 
+          t == 0, as.numeric(ceiling_date(주차시각,"hours") - 주차시각),
+          t != 0 & trunc.POSIXt(출차시각,'hours') > 시작시각, 3600, 
+          
+          trunc.POSIXt(출차시각,'hours') == 시작시각, as.numeric(출차시각 - 시작시각),
+          default = 0)
+          
+        ][,.(센서, 시작시각, 점유시간)
+        ][,.(점유시간 = round(sum(점유시간)/3600*100, digits = 2)), by = .(센서, 시간 = 시작시각)] %>% 
+          
+          dcast(시간 ~ 센서, value.var = ("점유시간"), fill = 0) %>% tibble()
+      })
   })
+ 
   
   ## share summary 
   share_ <- reactive({
     date.min = input$date_range_[1] %>% as_date()
     date.max = input$date_range_[2] %>% as_date()
-    data = share() 
+    data = share() %>% tibble()
     data %>% 
-      filter(as_date(time) <= date.max & as_date(time) >= date.min) 
+      filter(as_date(시간) <= date.max & as_date(시간) >= date.min) 
   })
   
   ## share summary 
   share_w <- reactive({
     date.min = input$date_range_w[1] %>% as_date()
     date.max = input$date_range_w[2] %>% as_date()
-    data = share() 
+    data = share() %>% tibble()
     data %>% 
-      filter(as_date(time) <= date.max & as_date(time) >= date.min) 
+      filter(as_date(시간) <= date.max & as_date(시간) >= date.min) 
   })
   
+
   # 일간 그래프들 -----------------------------------
   
   # 일간 이용률 
   output$share_plot_daily <- renderPlotly({
-    x = share_() %>% 
-      group_by(time = hour(as_datetime(time))) %>% 
+    x = share_() %>% tibble() %>% 
+      group_by(시간 = hour(as_datetime(시간))) %>% 
       summarise(across(everything(), mean)) %>% 
-      gather("센서","이용률", -time) %>% 
-      group_by(time) %>% 
-      summarise(이용률 = round(mean(이용률)*100,1)) %>% 
-      rename(시간 = time) 
+      gather("센서","이용률", -시간) 
     
-    me = round(mean(x$이용률),1)
+    mean_ = round(mean(x$이용률),1)
     
     if(input$stat_type == "all"){
-    p = x %>%
-      plot_ly() %>% 
-      add_trace(x = ~시간, y = ~이용률,  type = 'scatter', mode = 'lines', fill = 'tozeroy', 
-                line = list(shape = "spline"), 
-                text = ~paste0(이용률,"%"),
-                hoverinfo = "text",
-                textposition = "inside") %>% 
-      add_text(x = 1.5, y = me*1.05, text = ~paste0("평균 ", me, "%"),
-               hoverinfo ="text", showlegend = F) %>% 
-      add_lines(x = 0:24, y = me, showlegend = F,
-                text = ~paste0("평균"),
-                hoverinfo ="text",
-                textposition = "inside",
-                line = list(color = "grey",
-                            width = 1,
-                            dash = 'dot'))
-      }else { 
-    
-      x = share_() %>% 
-        group_by(time = hour(as_datetime(time))) %>% 
-        summarise(across(everything(), mean)) %>% 
-        gather("센서","이용률", -time) %>% 
-        group_by(졸음쉼터 = str_sub(센서,1,2), time) %>% 
-        summarise(이용률 = round(mean(이용률)*100,1)) %>% 
-        rename(시간 = time) 
-      
-      p = x %>%
+      p = x %>% 
+        group_by(시간) %>% 
+        summarise(이용률 = round(mean(이용률),1)) %>% 
         plot_ly() %>% 
         add_trace(x = ~시간, y = ~이용률,  type = 'scatter', mode = 'lines', 
-                  fill = ~졸음쉼터, 
-                  color = ~졸음쉼터,
                   line = list(shape = "spline"), 
                   text = ~paste0(이용률,"%"),
                   hoverinfo = "text",
-                  textposition = "inside") %>% 
-        add_text(x = 1.5, y = me*1.05, text = ~paste0("평균 ", round(me,1), "%"),
-                 hoverinfo ="text", showlegend = F) %>% 
-        add_lines(x = 0:24, y = me, showlegend = F,
-                  text = ~paste0("평균"),
-                  hoverinfo ="text",
-                  textposition = "inside",
-                  line = list(color = "grey",
-                              width = 1,
-                              dash = 'dot')) 
-      }
+                  textposition = "inside")
+    } else { 
+      p = x %>% 
+        group_by(졸음쉼터 = str_sub(센서,1,2), 시간) %>% 
+        summarise(이용률 = round(mean(이용률),1)) %>% 
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~이용률,  type = 'scatter', mode = 'lines', 
+                  line = list(shape = "spline"), 
+                  text = ~paste0(졸음쉼터, "\n", 시간, "시 ", 이용률,"%"),
+                  hoverinfo = "text",
+                  fill = ~졸음쉼터, color = ~졸음쉼터,
+                  textposition = "inside")
+    }
     
-    p %>%
-      layout(
-        xaxis = list(title = "",
-                     fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T),
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) %>% 
+    p %>% 
+      add_annotations(text = paste0("평균 ", round(mean_,1), "%"),
+                      xref = "paper", x = 0.1, y = mean_ ) %>% 
+      add_lines(x = 0:24, y = mean_, showlegend = F,
+                text = ~paste0("평균", mean_, "%"),
+                hoverinfo ="text",
+                textposition = "inside",
+                line = list(color = "grey",
+                            width = 2,
+                            dash = 'dot')) %>%
+      layout( xaxis = list(title = "", fixedrange = T),
+              yaxis = list(title = "", fixedrange = T),
+              plot_bgcolor  = "rgba(0, 0, 0, 0)",
+              paper_bgcolor = "rgba(0, 0, 0, 0)") %>% 
       config(displayModeBar = F)
   })
   
-
+  
   
   # 일간 이용건수 
   output$count_plot_daily <- renderPlotly({
-    nn = sensor.name() %>% length()
     
-    x = event_() %>% 
+    x = event_() %>% tibble() %>% 
       group_by(시간 = hour(주차시각)) %>% 
       summarise(이용건수 = n()) 
+    
+    nn = sensor.name() %>% length()
     
     peak.start = min(which(x$이용건수 > 1.5*mean(x$이용건수)))
     peak.end = max(which(x$이용건수 > 1.5*mean(x$이용건수)))
     
     me = round(mean(x$이용건수),0)
-      
+    
     if(input$stat_type == "all"){
       
-     p = x %>% 
+      p = x %>% 
         plot_ly() %>% 
         add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line",
                   line = list(shape = "spline"),
@@ -760,54 +622,45 @@ server <- function(input, output) {
         add_text(x = (peak.start + peak.end)/2 , y = ~max(이용건수)*.2,
                  hoverinfo ="text",
                  showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") ) 
-      } else {
-        
-        x = event_() %>% 
-          mutate(졸음쉼터 = str_sub(센서, 1,2)) %>% 
-          group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
-          summarise(이용건수 = n()) 
-        
-        
-        p = x %>% 
-          plot_ly() %>% 
-          add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line", 
-                    line = list(shape = "spline"), 
-                    fill = ~졸음쉼터,
-                    text = ~paste0(졸음쉼터, "\n ", 이용건수, "건"),
-                    hoverinfo = "text",
-                    textposition = "inside",
-                    color = ~졸음쉼터
-          ) 
-
-      }
+    } else {
+      x = event_() %>% tibble() %>%
+        mutate(졸음쉼터 = str_sub(센서, 1,2)) %>% 
+        group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
+        summarise(이용건수 = n()) 
+      
+      p = x %>% 
+        plot_ly() %>% 
+        add_trace(x = ~시간, y = ~이용건수,  type="scatter", mode="line", 
+                  line = list(shape = "spline"), 
+                  fill = ~졸음쉼터,
+                  text = ~paste0(졸음쉼터, "\n ", 이용건수, "건"),
+                  hoverinfo = "text",
+                  textposition = "inside",
+                  color = ~졸음쉼터) 
+    }
     
     p %>%
-      add_text(x = 1, y = me*1.05, text = paste0("평균 ",me,"건"), hoverinfo ="text", showlegend = F) %>% 
+      add_annotations(text = paste0("평균 ", me, "건"),xref = "paper", x = 0.1, y = me ) %>% 
       add_lines(x = 0:24, y = me, showlegend = F,
-                text = ~paste0("평균"),
-                hoverinfo ="text",
-                textposition = "inside",
+                text = ~paste0("평균 ", me, "건"),
+                hoverinfo ="text", textposition = "inside",
                 line = list(color = "grey",
-                            width = 1,
+                            width = 2,
                             dash = 'dot')) %>% 
-      layout(
-        xaxis = list(title = "",
-                     fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T),
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) %>% 
+      layout(xaxis = list(title = "", fixedrange = T),
+             yaxis = list(title = "",fixedrange = T),
+             plot_bgcolor  = "rgba(0, 0, 0, 0)",
+             paper_bgcolor = "rgba(0, 0, 0, 0)") %>% 
       config(displayModeBar = F)
     
   })
   
   # 일간 이용시간
   output$time_plot_daily <- renderPlotly({
-      x = event_() %>% 
-        group_by(시간 = hour(주차시각)) %>% 
-        summarise(체류시간 = round(mean(점유시간)/60,1))
-      me = round(mean(x$체류시간),1)
+    x = event_() %>% tibble() %>% 
+      group_by(시간 = hour(주차시각)) %>% 
+      summarise(체류시간 = round(mean(체류시간)/60,1))
+    me = round(mean(x$체류시간),1)
     
     if(input$stat_type == "all"){
       
@@ -838,7 +691,7 @@ server <- function(input, output) {
                  hoverinfo ="text",
                  showlegend = FALSE, text = paste0("\n 피크 시간대 \n", peak.start, "시 ~ ", peak.end, "시") )
     } else {
-      x = event_() %>% 
+      x = event_() %>% tibble() %>% 
         group_by(졸음쉼터, 시간 = hour(주차시각)) %>% 
         summarise(체류시간 = round(mean(점유시간)/60,1))
       
@@ -864,94 +717,55 @@ server <- function(input, output) {
                 line = list(color = "grey",
                             width = 1,
                             dash = 'dot')) %>% 
-      layout(
-        xaxis = list(title = "",
-                     fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T),
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) %>% 
+      layout(xaxis = list(title = "",fixedrange = T),
+             yaxis = list(title = "",fixedrange = T),
+             plot_bgcolor  = "rgba(0, 0, 0, 0)",
+             paper_bgcolor = "rgba(0, 0, 0, 0)") %>% 
       config(displayModeBar = F)
     
   })
-
+  
   # 히트맵 
   output$heatmap_daily <- renderPlotly({
-    x = share_() %>% 
-      group_by(time = hour(as_datetime(time))) %>% 
+    share_ = share_() %>% tibble() %>% 
+      group_by(time = hour(as_datetime(시간))) %>% 
       summarise(across(everything(), mean)) %>% 
       gather("센서","이용률", -time) %>% 
       group_by(센서, time) %>% 
-      summarise(이용률 = round(mean(이용률)*100,1)) %>% 
+      summarise(이용률 = round(mean(이용률),1)) %>% 
       rename(시간 = time) 
     
-    p1 = x %>%
-      filter(str_detect(센서,"대신")) %>% 
-      plot_ly() %>% 
-      add_heatmap(x = ~시간, y = ~센서, z = ~이용률, 
-                  colors = colfunc_gyr(16), 
-                  showscale = T, 
-                  text = ~paste0(센서," ",시간,"시\n", 이용률, "%"),
-                  hoverinfo ="text"
-      ) %>% 
-      layout(
-        xaxis = list(fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T,
-                     categoryorder = "array",
-                     categoryarray = ~센서,
-                     autorange = "reversed"),
-        
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) 
-    
-    p2 = x %>%
-      filter(str_detect(센서,"옥천")) %>% 
-      plot_ly() %>% 
-      add_heatmap(x = ~시간, y = ~센서, z = ~이용률, 
-                  colors = colfunc_gyr(16), 
-                  showscale = F,
-                  text = ~paste0(센서," ",시간,"시\n", 이용률, "%"),
-                  hoverinfo ="text"
-      ) %>% 
-      layout(
-        xaxis = list(fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T,
-                     categoryorder = "array",
-                     categoryarray = ~센서,
-                     autorange = "reversed"),
-        
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) 
-    
-    p3 = x %>%
-      filter(str_detect(센서,"영천")) %>% 
-      plot_ly() %>% 
-      add_heatmap(x = ~시간, y = ~센서, z = ~이용률, 
-                  colors = colfunc_gyr(16), 
-                  showscale = F,
-                  text = ~paste0(센서," ",시간,"시\n", 이용률, "%"),
-                  hoverinfo ="text"
-      ) %>% 
-      layout(
-        xaxis = list(fixedrange = T),
-        yaxis = list(title = "",
-                     fixedrange = T,
-                     categoryorder = "array",
-                     categoryarray = ~센서,
-                     autorange = "reversed"),
-        
-        plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      ) 
-    
-    subplot(p1, p2, p3, nrows = 3, shareX = T)
+    for(i in 1:3){
+      plot_name = paste0("p",i)
+      sensor = c("대신","옥천","영천")
+      
+      showscale = ifelse(i == 1, T, F)
+      plott = share_ %>%
+        tibble() %>% 
+        filter(str_detect(센서,sensor[i])) %>% 
+        plot_ly() %>% 
+        add_heatmap(x = ~시간, y = ~센서, z = ~이용률, 
+                    showscale = showscale, 
+                    zmin = 0, zmax = 55,
+                    text = ~paste0(센서," ",시간,"시\n", 이용률, "%"),
+                    hoverinfo ="text",
+                    colors = colfunc_gyr(16)
+        ) %>% 
+        layout(
+          xaxis = list(fixedrange = T),
+          yaxis = list(title = "",
+                       fixedrange = T,
+                       categoryorder = "array",
+                       categoryarray = ~센서,
+                       autorange = "reversed"),
+          plot_bgcolor  = "rgba(0, 0, 0, 0)",
+          paper_bgcolor = "rgba(0, 0, 0, 0)"
+        ) 
+      assign(plot_name, plott)
+    }
+    subplot(p1, p2, p3, nrows = 3, shareX = T) 
   })
-
+  
   
   
   
@@ -960,7 +774,7 @@ server <- function(input, output) {
   ## 주간 이용률 
   output$share_plot_week <- renderPlotly({
     if(input$stat_type_week == "all"){
-      x = share_w() %>% 
+      x = share_w() %>% tibble() %>% 
         group_by(요일 = weekdays(as_date(time))) %>% 
         summarise(across(-time, mean)) %>% 
         gather("센서","이용률", -요일) %>% 
@@ -984,7 +798,7 @@ server <- function(input, output) {
                               width = 1,
                               dash = 'dot'))
     } else {
-      x = share_w() %>% 
+      x = share_w() %>% tibble() %>% 
         group_by(요일 = weekdays(as_date(time))) %>% 
         summarise(across(-time, mean)) %>% 
         gather("센서","이용률", -요일) %>% 
@@ -1023,7 +837,7 @@ server <- function(input, output) {
   
   ## 주간 이용건수 
   output$count_plot_week <- renderPlotly({
-    x = event_w() %>% 
+    x = event_w() %>% tibble() %>% 
       group_by(요일) %>% 
       summarise(이용건수 = n()) 
     
@@ -1048,10 +862,9 @@ server <- function(input, output) {
                               dash = 'dot')) 
     } else {
       
-      x = event_w() %>% 
+      x = event_w() %>% tibble() %>% 
         group_by(졸음쉼터, 요일) %>% 
         summarise(이용건수 = n()) 
-      
       
       p = x %>% 
         plot_ly() %>% 
@@ -1062,7 +875,7 @@ server <- function(input, output) {
                   textposition = "inside",
                   color = ~졸음쉼터
         ) %>% 
-      add_text(x = "Monday", y = me/3*1.05, text = paste0("평균 ",round(me/3,1),"건"), hoverinfo ="text", showlegend = F) %>% 
+        add_text(x = "Monday", y = me/3*1.05, text = paste0("평균 ",round(me/3,1),"건"), hoverinfo ="text", showlegend = F) %>% 
         add_lines(x = week.name.ko, y = me/3, showlegend = F,
                   text = paste0("평균 : ", round(me/3,1), "건"),
                   hoverinfo ="text",
@@ -1070,48 +883,36 @@ server <- function(input, output) {
                   line = list(color = "grey",
                               width = 1,
                               dash = 'dot')) 
-      
     }
     p %>%
-      layout(
-        xaxis = list(title = "",
-                     fixedrange = T,
-                     categoryorder = "array",
-                     categoryarray = week.name.ko),
-        yaxis = list(title = "",
-                     fixedrange = T),
+      layout(xaxis = list(title = "",fixedrange = T,categoryorder = "array",categoryarray = week.name.ko),
+        yaxis = list(title = "",fixedrange = T),
         plot_bgcolor  = "rgba(0, 0, 0, 0)",
-        paper_bgcolor = "rgba(0, 0, 0, 0)"
-      )
+        paper_bgcolor = "rgba(0, 0, 0, 0)")
     
   })
   
   
   ## 주간 이용시간 
   output$time_plot_week <- renderPlotly({
-    
-    x = event_w() %>% 
+    x = event_w() %>% tibble() %>% 
       group_by(요일) %>% 
       summarise(체류시간 = round(mean(점유시간)/60),2) 
     
     me = round(mean(x$체류시간),1)
     
     if(input$stat_type_week == "all"){
-      
       p = x %>% 
         plot_ly() %>% 
         add_trace(x = ~요일, y = ~체류시간,  type="bar",
                   text = ~paste0("\n", 체류시간, "분"),
                   hoverinfo = "text",
-                  textposition = "inside"
-        ) 
-    }  else {
-      
-      x = event_w() %>% 
+                  textposition = "inside") 
+    } else {
+      x = event_w() %>% tibble() %>% 
         group_by(졸음쉼터, 요일) %>% 
         summarise(체류시간 = round(mean(점유시간)/60),2)
-      
-      
+
       p = x %>% 
         plot_ly() %>% 
         add_trace(x = ~요일, y = ~체류시간,  type = "bar",
@@ -1121,7 +922,6 @@ server <- function(input, output) {
                   textposition = "inside",
                   color = ~졸음쉼터
         )
-      
     }
     p %>%
       add_text(x = "Monday", y = me*1.05, text = paste0("평균 ",me,"분"), hoverinfo ="text", showlegend = F) %>% 
@@ -1132,24 +932,17 @@ server <- function(input, output) {
                 line = list(color = "grey",
                             width = 1,
                             dash = 'dot')) %>% 
-      layout(
-        xaxis = list(title = "",
-                     fixedrange = T,
-                     categoryorder = "array",
+      layout(xaxis = list(title = "",fixedrange = T,categoryorder = "array",
                      categoryarray = week.name.ko),
-        yaxis = list(title = "",
-                     fixedrange = T),
+        yaxis = list(title = "",fixedrange = T),
         plot_bgcolor  = "rgba(0, 0, 0, 0)",
         paper_bgcolor = "rgba(0, 0, 0, 0)"
       )
   })
   
   
-
+  
 }# 
-
-
-
 
 
 shinyApp(ui = ui, server = server)
