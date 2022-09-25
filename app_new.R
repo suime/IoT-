@@ -21,9 +21,18 @@ dark <- bs_theme(bootswatch = "simplex", bg = "black", fg = "white", primary = "
 
 
 # sample ----
-sample_file = read_xlsx("sample2.xlsx")
+sample_file = read_xlsx("1-7.xlsx")
+week.name.en = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+week.name.ko = c("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
 
-
+# functions ----
+labels <- function(size, label) {
+  list(
+    args = c("xbins.size", size), 
+    label = label, 
+    method = "restyle"
+  )
+}
 
 # ui ----
 ui <- navbarPage("주차센서 대시보드", 
@@ -32,98 +41,105 @@ ui <- navbarPage("주차센서 대시보드",
                           sidebarLayout(
                             ## sidebar ----
                             sidebarPanel( width = 3,
-                                        
-                                        ### select_file ----
-                                        radioGroupButtons(
-                                          inputId = "select_file",
-                                          label = "분석 파일 선택하기",
-                                          choices = c(
-                                            "샘플 파일" = "default",
-                                            "사용자 파일" = "file"),
-                                          justified = T
-                                        ),
-                                        
-                                        conditionalPanel(
-                                          condition = "input.select_file== 'file'",
-                                          fileInput("raw_data",
-                                                    "사용자 데이터 업로드",
-                                                    accept = ".xlsx",
-                                                    buttonLabel = "찾아보기",
-                                                    placeholder = ".xlsx"),
                                           
-                                          actionBttn("file_refresh",
-                                                     "새로고침",
-                                                     icon = "table",
-                                                     style = "material-flat",
-                                                     size = "xs"),
+                                          ### select_file ----
+                                          radioGroupButtons(
+                                            inputId = "select_file",
+                                            label = "분석 파일 선택하기",
+                                            choices = c(
+                                              "샘플 파일" = "default",
+                                              "사용자 파일" = "file"),
+                                            justified = T
                                           ),
                                           
-                                        ### select_date_range ----
-                                        uiOutput("select_date_range"),
-                                       
-                                        
-                                        ### select_period ----
-                                        radioGroupButtons("select_period",
-                                                          "분석 파일 선택하기",
-                                                          choices = c(
-                                                            "일간" = "d",
-                                                            "주간" = "w",
-                                                            "월간" = "m"),
-                                                          justified = T),
-                                        
-                                        ###  select_location ----
-                                        radioGroupButtons("select_location",
-                                                          "공간 범위 선택",
-                                                          choices = c(
-                                                            "전체" = "a",
-                                                            "위치별" = "l"),
-                                                          justified = T),
-                                        
-                                        ###  select_stat ---- 
-                                        radioGroupButtons("select_stat",
-                                                          "분석 단위 선택",
-                                                          choices = c(
-                                                            "이용특성" = "u",
-                                                            "오류" = "e"),
-                                                          justified = T),
-                                        
-                                        tags$span("\n"),
-                                        hr(),
-                                        
-                                        # dark mode checker 
-                                        materialSwitch(inputId = "dark_mode",
-                                                       label = h6("Dark Mode"),
-                                                       status = "info"),
+                                          conditionalPanel(
+                                            condition = "input.select_file== 'file'",
+                                            fileInput("raw_data",
+                                                      "사용자 데이터 업로드",
+                                                      accept = ".xlsx",
+                                                      buttonLabel = "찾아보기",
+                                                      placeholder = ".xlsx"),
+                                            
+                                            actionBttn("file_refresh",
+                                                       "새로고침",
+                                                       icon = "table",
+                                                       style = "material-flat",
+                                                       size = "xs"),
+                                          ),
+                                          
+                                          ### select_date_range ----
+                                          uiOutput("select_date_range"),
+                                          
+                                          
+                                          ### select_period ----
+                                          radioGroupButtons("select_period",
+                                                            "분석 파일 선택하기",
+                                                            choices = c(
+                                                              "일간" = "d",
+                                                              "주간" = "w",
+                                                              "월간" = "m"),
+                                                            justified = T),
+                                          
+                                          ###  select_location ----
+                                          radioGroupButtons("select_location",
+                                                            "공간 범위 선택",
+                                                            choices = c(
+                                                              "전체" = "a",
+                                                              "위치별" = "l"),
+                                                            justified = T),
+                                          
+                                          ###  select_stat ---- 
+                                          radioGroupButtons("select_stat",
+                                                            "분석 단위 선택",
+                                                            choices = c(
+                                                              "이용특성" = "u",
+                                                              "오류" = "e"),
+                                                            justified = T),
+                                          
+                                          tags$span("\n"),
+                                          hr(),
+                                          
+                                          # dark mode checker 
+                                          materialSwitch(inputId = "dark_mode",
+                                                         label = h6("Dark Mode"),
+                                                         status = "info"),
                             ),
                             ## mainpanel ----
                             mainPanel(
                               conditionalPanel( condition = "input.select_stat== 'u'",
-                                         fluidRow(
-                                           column(8,
-                                                  h6("이용률")
-                                           ),
-                                           column(4,
-                                                  h6("이용률 상위 주차면")
-                                           )
-                                         ), # fluid row 1
-                                         
-                                         fluidRow(
-                                           column(8,
-                                                  h6("일간 이용률"),
-                                           ),
-                                           column(4,
-                                                  h6("이용률 상위 주차면"),
+                                                fluidRow(
                                                   
-                                           )
-                                         ), # fluid row 2
-                                         
-                                         
-                                         ### heatmap ----
-                                         fluidRow(
-                                           h6("히트맵"),
-                                           plotlyOutput("plot_share")
-                                         ), # fluid row 3
-
+                                                  ### 이용률 그래프 ----
+                                                  column(8,
+                                                         h6("이용률"),
+                                                         plotlyOutput("plot_share")
+                                                  ),
+                                                  
+                                                  column(4,
+                                                         h6("이용률 상위 주차면")
+                                                  )
+                                                ), # fluid row 1
+                                                
+                                                fluidRow(
+                                                  
+                                                  ### 이용건수 및 등등 ----
+                                                  column(8,
+                                                         h6("이용건수 및 등등 "),
+                                                         plotlyOutput("plot_test")
+                                                  ),
+                                                  column(4,
+                                                         h6("이용률 상위 주차면"),
+                                                         
+                                                  )
+                                                ), # fluid row 2
+                                                
+                                                
+                                                ### heatmap ----
+                                                fluidRow(
+                                                  h6("히트맵"),
+                                                  
+                                                ), # fluid row 3
+                                                
                               ), # conditional 1 : 이용특성 
                               
                               # error 요약 
@@ -156,16 +172,16 @@ ui <- navbarPage("주차센서 대시보드",
                                                ), # fluid row 3
                                                
                                                
-                       ) # conditional 2 
-                 ) # main panel
-                 ), # side layout
+                              ) # conditional 2 
+                            ) # main panel
+                          ), # side layout
                  ), # tab1
                  
                  ## dt output ----
-                tabPanel("RAW Data",
-                         h6("Raw data"),
-                         dataTableOutput("share_dt")
-                         ) # tab - raw data
+                 tabPanel("RAW Data",
+                          h6("Raw data"),
+                          dataTableOutput("share_dt")
+                 ) # tab - raw data
 )
 
 #server ----
@@ -199,8 +215,8 @@ server <- function(input, output, session) {
         
         cols_ = c("장치구분", "검지기", "배터리", "장애", "RSSI", "SMR", "동작")
         data = data[, .(센서, 센서값, 일시 = `송신일시(sendDate)`)
-          
-          # 텍스트 값 trim 
+                    
+                    # 텍스트 값 trim 
         ][,센서값 := str_remove_all(센서값, "[[a-zA-Z]|[가-힣]|[\\s]]+: ")
         ][,센서 := str_remove_all(센서, "[주차센서_|졸음쉼터]")
         ][, 졸음쉼터 := str_sub(센서,1,2)  
@@ -300,7 +316,7 @@ server <- function(input, output, session) {
         options = list(
           pageLength =20
         )
-    )
+      )
   })
   
   
@@ -309,11 +325,11 @@ server <- function(input, output, session) {
     data = rare()
     
     data[오류구분 == 0
-        ][,출차시각 := fifelse(검지기 == "주차", shift(일시,type = "lead"),"0")
-        ][출차시각 != "0"
-        ][,c("주차시각", "출차시각") := lapply(.SD, as_datetime), .SDcols = c("일시", "출차시각") 
-        ][,체류시간 := as.numeric(출차시각 - 주차시각)
-        ][,.(센서, 주차시각, 출차시각, 체류시간)]
+    ][,출차시각 := fifelse(검지기 == "주차", shift(일시,type = "lead"),"0")
+    ][출차시각 != "0"
+    ][,c("주차시각", "출차시각") := lapply(.SD, as_datetime), .SDcols = c("일시", "출차시각") 
+    ][,체류시간 := as.numeric(출차시각 - 주차시각)
+    ][,.(센서, 주차시각, 출차시각, 체류시간)]
     
   })
   
@@ -390,12 +406,14 @@ server <- function(input, output, session) {
     } else if(input$select_period == "w"){
       p = data %>%
         group_by(졸음쉼터 = str_sub(센서,1,2), 기간 = weekdays(as_date(시간))) %>% 
-        summarise(이용률 = mean(점유율))
+        summarise(이용률 = mean(점유율)) %>% 
+        arrange(factor(기간, levels = week.name.ko))
     } else {
       p = data %>%
         group_by(졸음쉼터 = str_sub(센서,1,2), 기간 = months(as_date(시간))) %>% 
         summarise(이용률 = mean(점유율))
     }
+      mean_ = p$이용률 %>% mean() %>% round(1)
     
     # 위치별 
     if(input$select_location == "a"){
@@ -403,25 +421,102 @@ server <- function(input, output, session) {
         group_by(기간) %>% 
         summarise(이용률 = mean(이용률))%>%
         plot_ly() %>% 
-        add_trace(type = 'scatter', mode = 'lines',
+        add_trace(type = 'scatter', mode = 'lines+markers',
                   line = list(shape = "spline"),
-                  text = ~paste0(기간, "\n" ,이용률, "%"),
+                  text = ~paste0("\n" ,round(이용률,1), "%"),
                   hoverinfo = text,
                   textposition = "inside",
                   x = ~기간, y = ~이용률) 
     } else {
       p = p %>%
         plot_ly() %>% 
-        add_trace(type = 'scatter', mode = 'lines',
-                  line = list(shape = "spline"),
-                  x = ~기간, y = ~이용률,
-                  text = ~paste0(기간, "\n" ,이용률, "%"),
+        add_lines(x = ~기간, y = ~이용률, 
+                  text = ~paste0("\n" ,round(이용률,1), "%"),
                   hoverinfo = text,
-                  textposition = "inside",
-                  fill = ~졸음쉼터, color = ~졸음쉼터) 
+                  marker = list(),
+                  fill = ~졸음쉼터, color = ~졸음쉼터
+                  )
     }
-      
+    p %>%
+      add_annotations(x = 0.9, y = mean_, 
+                      showlegend = F,
+                      xref = "paper",
+                      text = paste0("평균 : ", mean_, "%"),
+                      hoverinfo ="text",
+                      textposition = "inside",
+                      line = list(color = "grey", width = 2, dash = 'dot')) %>% 
+      add_lines(x = ~기간, y = mean_, showlegend = F, 
+                line = list(color = "grey", width = 2, dash ="dot")) %>% 
+      layout(xaxis = list(title = "",
+                         fixedrange = T,
+                         categoryorder = "array",
+                         categoryarray = week.name.ko),
+                         yaxis = list(title = "", fixedrange = T),
+            plot_bgcolor  = "rgba(0, 0, 0, 0)",
+            paper_bgcolor = "rgba(0, 0, 0, 0)",
+            updatemenus = list(
+              x = 0.1 , y = 1.15 ,
+              actieve = T, 
+              buttons = list(
+                labels("D1", "Day"),
+                labels("M1", "Month"),
+                labels("M6", "Half Year"),
+                labels("M12", "Year")))
+      )
   })
+  
+  ##  plot_count ----
+  output$plot_test <- renderPlotly({
+    data = event_()
+    
+    p = data %>% mutate(일자 = as_date(주차시각), 요일 = weekdays(일자), 이용건수 = 1)
+    
+      p %>% 
+        plot_ly(x = ~일자, y = ~이용건수, type = 'bar',
+                visible = T,
+                transforms = list(
+                  list(
+                    type = 'aggregate',
+                    groups = ~일자,
+                    aggregations = list(
+                      list(target = 'y', func = 'count', enabled = T))
+                ))) %>% 
+        layout(
+          yaxis = list(fixedrange =T),
+          xaxis = list(fixedrange = T,
+          categoryorder = "array",
+          categoryarray = week.name.ko),
+          updatemenus = list(
+            list(
+              x = .1,
+              y = 1.15,
+              buttons = list(
+                
+                list(method = "restyle",
+                     args = list(list('transforms[0].groups' = list(~일자),
+                                 'x' = list(~일자))),
+                     label = "일간"),
+                
+                list(method = "restyle",
+                     args = list(list('transforms[0].groups' = list(~hour(주차시각)),
+                                      'x' = list(~hour(주차시각)))),
+                     label = "시간별"),  
+                
+                list(method = "restyle",
+                     args = list(list('transforms[0].groups' = list(~요일),
+                                      'x' = list(~요일))),
+                     label = "요일"),
+                
+                list(method = "update",
+                     args = list(list('transforms[0].groups' = list(~months(일자)),
+                                      'x' = list(~months(일자)))),
+                     label = "월별")
+                )
+            ))
+          )
+    
+  })
+  
   
 }
 
